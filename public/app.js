@@ -1,0 +1,892 @@
+const PAGES = {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
+  '/targets': 'targets',
+  '/settings': 'settings',
+  '/logs': 'logs'
+};
+
+function currentPage() {
+  return PAGES[location.pathname] || 'dashboard';
+}
+
+function go(path) {
+  history.pushState({}, '', path);
+  state.page = PAGES[path] || 'dashboard';
+  nav();
+}
+
+window.addEventListener('popstate', () => {
+  state.page = currentPage();
+  nav();
+});
+
+const state = {
+  page: currentPage(),
+  filter: 'library',
+  settings: null,
+  status: null,
+  targets: [],
+  logs: [],
+  styles: null,
+  selected: new Set(),
+  token: localStorage.getItem('ecs_token') || '',
+  timers: []
+};
+
+const $ = (sel) => document.querySelector(sel);
+const main = $('#main');
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (state.token) headers['x-access-token'] = state.token;
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+  });
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    const data = await res.json();
+    if (res.status === 401) {
+      showTokenPrompt();
+      throw new Error(data.error || '需要访问令牌');
+    }
+    if (!res.ok) throw new Error(data.error || `请求失败（${res.status}）`);
+    return data;
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `请求失败（${res.status}）`);
+  }
+  return res;
+}
+
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  $('#toast-wrap').appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+
+function showTokenPrompt() {
+  const root = $('#modal-root');
+  root.innerHTML = `
+    <div class="mask">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-head"><h3>访问令牌</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+        <p class="muted mb">服务端已开启访问令牌，请输入后继续（会保存在本机浏览器）。</p>
+        <input type="password" id="token-input" placeholder="访问令牌" style="margin-bottom:12px">
+        <div class="row"><button class="btn primary" id="token-save">保存并继续</button></div>
+      </div>
+    </div>`;
+  $('#token-save').onclick = () => {
+    state.token = $('#token-input').value.trim();
+    localStorage.setItem('ecs_token', state.token);
+    closeModal();
+    loadAll();
+  };
+  $('#token-input').onkeydown = (e) => {
+    if (e.key === 'Enter') $('#token-save').click();
+  };
+  setTimeout(() => $('#token-input').focus(), 50);
+}
+
+window.closeModal = () => {
+  $('#modal-root').innerHTML = '';
+};
+
+function openModal(html) {
+  $('#modal-root').innerHTML = `<div class="mask"><div class="modal">${html}</div></div>`;
+  $('#modal-root .mask').onclick = (e) => {
+    if (e.target === e.currentTarget) closeModal();
+  };
+}
+
+function nav() {
+  document.querySelectorAll('.nav-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.page === state.page);
+  });
+  if (state.page === 'dashboard') renderDashboard();
+  if (state.page === 'targets') renderTargets();
+  if (state.page === 'settings') renderSettings();
+  if (state.page === 'logs') renderLogs();
+}
+
+document.querySelectorAll('.nav-btn').forEach((b) => {
+  b.onclick = () => {
+    go(b.dataset.path || '/');
+  };
+});
+
+async function loadStatus() {
+  try {
+    state.status = await api('/api/status');
+  } catch {
+    state.status = null;
+  }
+  updateSidebar();
+  return state.status;
+}
+
+function updateSidebar() {
+  const s = state.status;
+  const dot = $('#side-dot');
+  const text = $('#side-text');
+  if (!s) {
+    dot.className = 'dot red';
+    text.textContent = '服务不可用';
+    return;
+  }
+  if (s.running) {
+    dot.className = 'dot blue';
+    text.textContent = '正在同步…';
+    return;
+  }
+  if (s.emby?.connected) {
+    dot.className = 'dot green';
+    text.textContent = `已连接 ${s.emby.serverName || ''}`;
+  } else if (s.emby?.configured) {
+    dot.className = 'dot red';
+    text.textContent = 'Emby 连接异常';
+  } else {
+    dot.className = 'dot gray';
+    text.textContent = '未配置 Emby';
+  }
+}
+
+async function loadAll() {
+  await loadStatus();
+  if (state.page === 'targets') renderTargets();
+  if (state.page === 'logs') renderLogs();
+}
+
+// ---------- 概览 ----------
+async function renderDashboard() {
+  const s = state.status || await loadStatus();
+  const emby = s.emby || {};
+  const embyState = emby.connected
+    ? `<span class="dot green"></span> 已连接${s.font?.hint ? '' : ''}`
+    : emby.configured
+      ? `<span class="dot red"></span> 连接失败：${esc(emby.error)}`
+      : `<span class="dot gray"></span> 未配置`;
+
+  main.innerHTML = `
+    <div class="page-title">概览</div>
+    <div class="page-desc">封面工坊运行状态一览</div>
+    <div class="cards">
+      <div class="card"><div class="label">Emby 服务器</div><div class="value" style="font-size:15px">${embyState}</div><div class="sub">${emby.serverName ? esc(emby.serverName) + ' v' + esc(emby.version || '') : ''}</div></div>
+      <div class="card"><div class="label">监控中的合集</div><div class="value">${s.stats?.enabled ?? 0}<span style="font-size:13px;color:var(--muted)"> / ${s.stats?.targets ?? 0}</span></div><div class="sub">已生成封面 ${s.stats?.generated ?? 0} 个</div></div>
+      <div class="card"><div class="label">最近同步</div><div class="value" style="font-size:15px">${fmtTime(s.lastRun)}</div><div class="sub">${esc(s.lastReason || '')}${s.lastError ? ' · 有错误' : ''}</div></div>
+      <div class="card"><div class="label">定时任务</div><div class="value" style="font-size:15px">${esc(s.cron || '—')}</div><div class="sub">${s.webhookPending ? 'Webhook 待执行' : '等待触发'}</div></div>
+    </div>
+    <div class="panel">
+      <h3>操作</h3>
+      <div class="row">
+        <button class="btn" id="btn-test">测试连接</button>
+        <button class="btn primary" id="btn-sync">立即同步</button>
+        <label class="row" style="gap:6px;margin-left:6px"><input type="checkbox" id="force-sync"> 强制重新生成</label>
+      </div>
+      <div class="status-line" id="op-result"></div>
+    </div>
+    <div class="panel">
+      <h3>Webhook 地址（Emby 插件配置用）</h3>
+      <div class="row">
+        <div class="url-box" id="webhook-url">${esc(s.webhook?.url || '')}</div>
+        <button class="btn sm" id="copy-webhook">复制</button>
+      </div>
+      <p class="muted mt">在 Emby「Webhooks 插件」中添加该地址，勾选 项目已添加 / 项目已更新 / 媒体库新建 等事件，影片入库后会自动重新生成相关封面。</p>
+      ${s.font?.hint ? `<p class="status-line err">⚠ ${esc(s.font.hint)}（当前使用字体：${esc(s.font.fontFamily)}）</p>` : ''}
+    </div>
+    <div class="panel">
+      <h3>最近日志</h3>
+      <div id="mini-logs"></div>
+      <button class="btn sm mt" onclick="go('/logs')">查看全部日志</button>
+    </div>`;
+
+  $('#btn-test').onclick = async () => {
+    const el = $('#op-result');
+    el.className = 'status-line';
+    el.textContent = '正在测试连接…';
+    try {
+      const r = await api('/api/emby/test');
+      el.className = 'status-line ok';
+      el.textContent = `连接成功：${r.serverName}（版本 ${r.version || '未知'}）`;
+    } catch (e) {
+      el.className = 'status-line err';
+      el.textContent = `连接失败：${e.message}`;
+    }
+  };
+
+  $('#btn-sync').onclick = async () => {
+    const btn = $('#btn-sync');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 同步中…';
+    try {
+      const r = await api('/api/sync', { method: 'POST', body: { force: $('#force-sync').checked } });
+      toast(`同步完成：更新 ${r.updated} 个，无变化 ${r.unchanged} 个，失败 ${r.failed} 个`, r.failed ? 'err' : 'ok');
+      await loadStatus();
+      renderDashboard();
+    } catch (e) {
+      toast(e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '立即同步';
+    }
+  };
+
+  $('#copy-webhook').onclick = () => {
+    navigator.clipboard.writeText($('#webhook-url').textContent.trim());
+    toast('Webhook 地址已复制');
+  };
+
+  const logs = await api('/api/logs').catch(() => ({ logs: [] }));
+  const mini = logs.logs.slice(0, 8).map((l) => `
+    <div style="padding:5px 0;border-bottom:1px solid rgba(39,51,73,0.4);font-size:13px">
+      <span class="lvl-${esc(l.level)}">[${esc(l.level)}]</span>
+      <span class="muted" style="font-size:12px">${fmtTime(l.ts)}</span>
+      <span> ${esc(l.message)}</span>
+    </div>`).join('');
+  $('#mini-logs').innerHTML = mini || '<div class="muted">暂无日志</div>';
+}
+
+// ---------- 合集管理 ----------
+async function renderTargets() {
+  main.innerHTML = `
+    <div class="page-title">合集管理</div>
+    <div class="page-desc">管理 Emby 媒体库与合集的封面生成，支持多选批量操作</div>
+    <div class="chips" id="chips">
+      <button class="chip active" data-f="library">媒体库</button>
+      <button class="chip" data-f="collection">合集</button>
+      <button class="chip" data-f="enabled">仅启用</button>
+    </div>
+    <div class="panel" style="padding:12px 16px">
+      <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div class="row" style="gap:12px">
+          <label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" class="tick" id="sel-all"> 全选</label>
+          <span class="muted" id="sel-count">已选 0 项</span>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button class="btn sm" id="batch-enable" disabled>启用</button>
+          <button class="btn sm" id="batch-disable" disabled>停用</button>
+          <button class="btn sm primary" id="batch-gen" disabled>更新封面</button>
+        </div>
+      </div>
+    </div>
+    <div class="tlist" id="target-list"><div class="empty">加载中…</div></div>`;
+
+  if (!state.styles) {
+    try {
+      state.styles = (await api('/api/styles'));
+    } catch {
+      state.styles = { styles: [{ id: 'single', name: '单图海报' }], sizes: [{ id: 'poster', label: '海报 2:3' }, { id: 'thumb', label: '缩略图 16:9' }] };
+    }
+  }
+  document.querySelectorAll('#chips .chip').forEach((c) => {
+    c.onclick = () => {
+      state.filter = c.dataset.f;
+      document.querySelectorAll('#chips .chip').forEach((x) => x.classList.toggle('active', x === c));
+      state.selected.clear();
+      drawTargets();
+    };
+  });
+
+  try {
+    const r = await api('/api/targets');
+    state.targets = r.targets;
+    drawTargets();
+  } catch (e) {
+    $('#target-list').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+  bindBatch();
+}
+
+function drawTargets() {
+  const f = state.filter;
+  const list = state.targets.filter((t) => {
+    if (f === 'library') return t.kind === 'library';
+    if (f === 'collection') return t.kind === 'collection';
+    if (f === 'enabled') return t.enabled;
+    return true;
+  }).sort((a, b) => ((a.kind === b.kind) ? 0 : (a.kind === 'library' ? -1 : 1)) || a.name.localeCompare(b.name, 'zh-CN'));
+  const box = $('#target-list');
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">没有符合条件的合集</div>';
+    return;
+  }
+  box.innerHTML = list.map((t) => {
+    const kind = t.kind === 'library' ? '<span class="badge lib">媒体库</span>' : '<span class="badge col">合集</span>';
+    const thumbStyle = t.kind === 'library' ? 'width:96px;height:54px' : 'width:56px;height:84px';
+    const thumb = t.coverUrl
+      ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
+      : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;font-size:22px;${thumbStyle}">🎬</div>`;
+    const sizeName = t.kind === 'library' ? '缩略图' : '海报';
+    const status = t.lastError
+      ? `<div class="err">⚠ ${esc(t.lastError)}</div>`
+      : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${esc(sizeName)} · ${t.itemCount || 0} 部影片</div>`;
+    return `
+      <div class="trow ${t.missing ? 'missing' : ''}">
+        <input type="checkbox" class="tick" data-id="${esc(t.id)}" ${state.selected.has(t.id) ? 'checked' : ''}>
+        ${thumb}
+        <div class="info">
+          <div class="name">${esc(t.name)} ${kind}${t.missing ? '<span class="badge gray">已删除</span>' : ''}</div>
+          ${status}
+        </div>
+        <div class="actions">
+          <button class="btn sm primary" data-act="gen" data-id="${esc(t.id)}">更新</button>
+          <label class="switch" title="${t.enabled ? '点击停用' : '点击启用'}">
+            <input type="checkbox" data-act="toggle" data-id="${esc(t.id)}" ${t.enabled ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>`;
+  }).join('');
+
+  box.querySelectorAll('input[data-act="toggle"]').forEach((el) => {
+    el.onchange = async () => {
+      try {
+        const r = await api(`/api/targets/${el.dataset.id}`, { method: 'PUT', body: { enabled: el.checked } });
+        toast(el.checked ? `已启用「${r.target.name}」，正在生成封面…` : `已停用「${r.target.name}」`, 'ok');
+        renderTargets();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    };
+  });
+
+  box.querySelectorAll('input.tick').forEach((el) => {
+    el.onchange = () => {
+      if (el.checked) state.selected.add(el.dataset.id);
+      else state.selected.delete(el.dataset.id);
+      updateBatchUI();
+    };
+  });
+
+  box.querySelectorAll('[data-preview]').forEach((el) => {
+    el.onclick = () => showPreview(el.dataset.preview);
+  });
+
+  box.querySelectorAll('button[data-act="gen"]').forEach((el) => {
+    el.onclick = async () => {
+      el.disabled = true;
+      el.innerHTML = '<span class="spinner"></span>';
+      try {
+        const r = await api(`/api/targets/${el.dataset.id}/generate`, { method: 'POST', body: {} });
+        toast('封面已重新生成并上传 ✅', 'ok');
+        renderTargets();
+      } catch (e) {
+        toast(e.message, 'err');
+        el.disabled = false;
+        el.textContent = '更新';
+      }
+    };
+  });
+  updateBatchUI();
+}
+
+function updateBatchUI() {
+  const n = state.selected.size;
+  const count = $('#sel-count');
+  if (count) count.textContent = `已选 ${n} 项`;
+  ['batch-enable', 'batch-disable', 'batch-gen'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = n === 0;
+  });
+  const all = document.querySelectorAll('#target-list input.tick');
+  const selAll = $('#sel-all');
+  if (selAll && all.length) {
+    selAll.checked = all.length === document.querySelectorAll('#target-list input.tick:checked').length;
+    selAll.disabled = all.length === 0;
+  }
+}
+
+function bindBatch() {
+  $('#sel-all').onchange = () => {
+    const checked = $('#sel-all').checked;
+    document.querySelectorAll('#target-list input.tick').forEach((el) => {
+      el.checked = checked;
+      if (checked) state.selected.add(el.dataset.id);
+      else state.selected.delete(el.dataset.id);
+    });
+    updateBatchUI();
+  };
+  $('#batch-enable').onclick = () => batchAction('enable');
+  $('#batch-disable').onclick = () => batchAction('disable');
+  $('#batch-gen').onclick = () => batchAction('generate');
+}
+
+async function batchAction(action, value = '') {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  try {
+    const r = await api('/api/targets/batch', { method: 'POST', body: { ids, action, value } });
+    if (action === 'generate' || action === 'enable') {
+      toast(`${action === 'generate' ? '已开始批量更新封面' : '已批量启用'}（${r.updated} 项）`, 'ok');
+      showSyncProgress();
+    } else if (action === 'disable') {
+      for (const id of ids) {
+        const t = state.targets.find((x) => x.id === id);
+        if (t) t.enabled = false;
+      }
+      toast(`已批量停用（${r.updated} 项）`, 'ok');
+      setTimeout(() => renderTargets(), 400);
+    }
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+let syncTimer = null;
+
+function showSyncProgress() {
+  clearInterval(syncTimer);
+  syncTimer = null;
+  let card = document.getElementById('sync-progress');
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'toast sync-progress';
+    card.id = 'sync-progress';
+    card.innerHTML = `
+      <div style="font-weight:600;margin-bottom:8px">批量更新进度</div>
+      <div class="progress-bar"><div class="progress-fill" id="sync-fill"></div></div>
+      <div class="muted" id="sync-text" style="margin-top:8px;white-space:pre-line;font-size:12px">准备中…</div>
+      <div class="row" style="gap:6px;margin-top:8px">
+        <button class="btn sm" id="sync-pause">暂停</button>
+        <button class="btn sm danger" id="sync-cancel">取消</button>
+      </div>`;
+    $('#toast-wrap').appendChild(card);
+  }
+  card.dataset.done = '';
+  const fill = $('#sync-fill');
+  const text = $('#sync-text');
+  const pauseBtn = $('#sync-pause');
+  const cancelBtn = $('#sync-cancel');
+  const labels = { idle: '空闲', running: '进行中', paused: '已暂停', cancelled: '已取消', done: '已完成', failed: '失败' };
+  let finished = false;
+
+  async function refresh() {
+    if (!document.getElementById('sync-progress')) {
+      clearInterval(syncTimer);
+      syncTimer = null;
+      return;
+    }
+    const s = (await api('/api/status').catch(() => null))?.sync;
+    if (!s) return;
+    const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+    fill.style.width = `${pct}%`;
+    let lines = `${labels[s.status] || s.status} · ${s.done} / ${s.total}（${pct}%）`;
+    if (s.current) lines += `\n正在处理：${s.current}`;
+    if (s.failed) lines += `\n失败 ${s.failed} 个`;
+    if (s.updated) lines += `\n已更新 ${s.updated} 个`;
+    text.textContent = lines;
+    pauseBtn.textContent = s.status === 'paused' ? '继续' : '暂停';
+    pauseBtn.disabled = !s.running && s.status !== 'paused';
+    cancelBtn.disabled = !s.running && s.status !== 'paused';
+    if (!s.running && !finished) {
+      finished = true;
+      card.dataset.done = '1';
+      clearInterval(syncTimer);
+      syncTimer = null;
+      if (s.status === 'done') text.textContent = `${lines}\n全部完成 ✅`;
+      if (s.status === 'cancelled') text.textContent = `${lines}\n任务已取消`;
+      pauseBtn.style.display = 'none';
+      cancelBtn.style.display = 'none';
+      renderTargets();
+      setTimeout(() => {
+        if (card.dataset.done === '1') card.remove();
+      }, 6000);
+    }
+  }
+
+  pauseBtn.onclick = async () => {
+    if (pauseBtn.textContent === '继续') {
+      await api('/api/sync/resume', { method: 'POST', body: {} });
+    } else {
+      await api('/api/sync/pause', { method: 'POST', body: {} });
+    }
+    refresh();
+  };
+  cancelBtn.onclick = async () => {
+    await api('/api/sync/cancel', { method: 'POST', body: {} });
+    refresh();
+  };
+  syncTimer = setInterval(refresh, 1000);
+  refresh();
+}
+
+function showPreview(id) {
+  openModal(`
+    <div class="modal-head"><h3>封面预览</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+    <img src="/api/preview/${encodeURIComponent(id)}?t=${Date.now()}" alt="封面预览" style="max-width:430px;margin:0 auto;display:block">
+    <p class="modal-note">预览使用 Emby 中的真实影片封面实时合成，不会上传。尺寸按类型固定：合集=海报，媒体库=缩略图。</p>
+    <div class="row mt"><button class="btn primary" id="pv-update">更新并上传</button></div>
+  `);
+  $('#pv-update').onclick = async () => {
+    const btn = $('#pv-update');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 生成中…';
+    try {
+      await api(`/api/targets/${encodeURIComponent(id)}/generate`, { method: 'POST', body: {} });
+      closeModal();
+      toast('封面已更新并上传 ✅', 'ok');
+      renderTargets();
+    } catch (e) {
+      toast(e.message, 'err');
+      btn.disabled = false;
+      btn.textContent = '更新并上传';
+    }
+  };
+}
+
+// ---------- 设置 ----------
+async function renderSettings() {
+  if (!state.styles) {
+    try {
+      state.styles = await api('/api/styles');
+    } catch {
+      state.styles = { styles: [{ id: 'grid', name: '经典拼图' }], sizes: [{ id: 'poster', label: '海报 2:3' }, { id: 'thumb', label: '缩略图 16:9' }] };
+    }
+  }
+  let s;
+  try {
+    s = (await api('/api/settings')).settings;
+  } catch (e) {
+    main.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    return;
+  }
+  state.settings = s;
+  const c = s.cover;
+
+  main.innerHTML = `
+    <div class="page-title">设置</div>
+    <div class="page-desc">配置 Emby 连接、自动更新与封面模板默认值</div>
+
+    <div class="panel">
+      <h3>Emby 连接</h3>
+      <div class="grid-2">
+        <label class="field"><span class="lab">服务器地址</span>
+          <input type="url" id="set-embyUrl" value="${esc(s.embyUrl)}" placeholder="http://192.168.1.100:8096">
+          <span class="hint">Emby 服务器地址（无需带 /emby 前缀）</span>
+        </label>
+        <label class="field"><span class="lab">API 密钥</span>
+          <input type="password" id="set-embyApiKey" value="${esc(s.embyApiKey)}" placeholder="Emby → 设置 → 高级 → API 密钥">
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn" id="btn-test">测试连接</button>
+        <span class="status-line" id="test-result"></span>
+      </div>
+      <div class="row" style="gap:10px">
+        <button class="btn primary" id="btn-save-emby">保存连接设置</button>
+        <span class="status-line" id="save-emby-result"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>自动更新</h3>
+      <div class="grid-2">
+        <label class="field"><span class="lab">定时同步 cron 表达式</span>
+          <input type="text" id="set-cron" value="${esc(s.cron)}" placeholder="0 */6 * * *">
+          <span class="hint">5 段格式：分 时 日 月 周，例如每 6 小时：0 */6 * * *</span>
+        </label>
+        <label class="field"><span class="lab">Webhook 防抖（毫秒）</span>
+          <input type="number" id="set-webhookDebounceMs" value="${s.webhookDebounceMs}">
+          <span class="hint">收到事件后等待多久再执行同步，避免入库瞬间频繁触发</span>
+        </label>
+      </div>
+      <div class="row" style="gap:22px">
+        <label class="row" style="gap:8px"><input type="checkbox" id="set-autoEnableNew" ${s.autoEnableNew ? 'checked' : ''}> 自动启用新发现的媒体库/合集</label>
+        <label class="row" style="gap:8px"><input type="checkbox" id="set-syncOnStart" ${s.syncOnStart ? 'checked' : ''}> 服务启动时自动同步</label>
+      </div>
+      <div class="row mt">
+        <div class="url-box" id="set-webhook-url">${esc(state.status?.webhook?.url || '')}</div>
+        <button class="btn sm" id="copy-wh">复制</button>
+      </div>
+      <p class="muted mt">Emby 官方 Webhooks 插件中填写上面的地址即可；事件建议勾选：项目已添加、项目已更新、项目已移除、媒体库新建。</p>
+      <div class="row" style="gap:10px;margin-top:12px">
+        <button class="btn primary" id="btn-save-auto">保存自动更新设置</button>
+        <span class="status-line" id="save-auto-result"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>封面样式与默认尺寸</h3>
+      <div class="row" style="gap:22px;align-items:flex-start">
+        <label class="field" style="max-width:320px"><span class="lab">选图依据（单图海报）</span>
+          <select id="set-defaultPickBy">
+            <option value="added" ${s.defaultPickBy === 'premiere' ? '' : 'selected'}>加入时间（最新入库）</option>
+            <option value="premiere" ${s.defaultPickBy === 'premiere' ? 'selected' : ''}>发行时间（最新发行）</option>
+          </select>
+          <span class="hint">单图海报样式按此依据挑选要展示的海报</span>
+        </label>
+      </div>
+      <div class="row" style="gap:22px;align-items:flex-start">
+        <label class="field" style="max-width:320px"><span class="lab">背景模式</span>
+          <select id="set-backgroundMode">
+            <option value="gradient" ${(c.backgroundMode || 'gradient') === 'gradient' ? 'selected' : ''}>渐变色（自定义上下色）</option>
+            <option value="poster" ${c.backgroundMode === 'poster' ? 'selected' : ''}>海报渐变模糊色</option>
+          </select>
+          <span class="hint">海报模式：从展示的海报取色并模糊作为背景</span>
+        </label>
+      </div>
+      <div class="grid-4">
+        <label class="field"><span class="lab">宽度 px</span><input type="number" id="set-width" value="${c.width}" min="200" max="4096"></label>
+        <label class="field"><span class="lab">高度 px</span><input type="number" id="set-height" value="${c.height}" min="200" max="4096"></label>
+        <label class="field"><span class="lab">列数</span><input type="number" id="set-columns" value="${c.columns}" min="1" max="8"></label>
+        <label class="field"><span class="lab">最多影片数</span><input type="number" id="set-maxItems" value="${c.maxItems}" min="1" max="64"></label>
+        <label class="field"><span class="lab">标题字号</span><input type="number" id="set-titleSize" value="${c.titleSize}" min="18" max="480"></label>
+        <label class="field"><span class="lab">副标题字号</span><input type="number" id="set-subtitleSize" value="${c.subtitleSize}" min="12" max="240"></label>
+        <label class="field"><span class="lab">圆角 px</span><input type="number" id="set-radius" value="${c.radius}" min="0" max="200"></label>
+        <label class="field"><span class="lab">边框 px</span><input type="number" id="set-cellBorder" value="${c.cellBorder}" min="0" max="40"></label>
+      </div>
+      <div class="grid-4 mt">
+        <label class="field"><span class="lab">背景顶部</span><input type="color" id="set-bgTop" value="${c.bgTop}"></label>
+        <label class="field"><span class="lab">背景底部</span><input type="color" id="set-bgBottom" value="${c.bgBottom}"></label>
+        <label class="field"><span class="lab">强调色</span><input type="color" id="set-accent" value="${c.accent}"></label>
+        <label class="field"><span class="lab">标题颜色</span><input type="color" id="set-titleColor" value="${c.titleColor}"></label>
+      </div>
+      <div class="grid-3 mt">
+        <label class="field"><span class="lab">字体（Pango 名称）</span><input type="text" id="set-fontFamily" value="${esc(c.fontFamily)}"></label>
+        <label class="field"><span class="lab">字体文件路径（可选）</span><input type="text" id="set-fontFile" value="${esc(c.fontFile)}" placeholder="留空自动查找系统字体"></label>
+        <label class="field"><span class="lab">副标题颜色</span><input type="color" id="set-subtitleColor" value="${c.subtitleColor}"></label>
+      </div>
+      <label class="row" style="gap:8px;margin-top:8px"><input type="checkbox" id="set-showCount" ${c.showCount ? 'checked' : ''}> 封面显示影片数量副标题</label>
+      <div class="row mt">
+        <select id="set-demo-size" style="width:150px">
+          <option value="poster">海报 2:3</option>
+          <option value="thumb">缩略图 16:9</option>
+        </select>
+        <button class="btn" id="btn-demo">预览示例封面</button>
+      </div>
+      <div class="row mt" style="gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="btn-save-cover">保存封面设置</button>
+        <button class="btn primary" id="btn-save-regen">保存并重新生成全部封面</button>
+        <span class="status-line" id="save-cover-result"></span>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:8px">以上选项为全局默认值，保存后应用到所有封面；「保存并重新生成」会立即应用并显示进度。</p>
+    </div>
+
+    <div class="panel">
+      <h3>访问令牌（可选）</h3>
+      <label class="field"><span class="lab">访问令牌</span>
+        <input type="password" id="set-accessToken" value="${esc(s.accessToken)}" placeholder="留空表示不启用">
+        <span class="hint">启用后，访问本工具的所有接口都需要在浏览器中输入该令牌；强烈建议在公网/多人环境启用</span>
+      </label>
+      <div class="row" style="gap:10px">
+        <button class="btn primary" id="btn-save-token">保存访问令牌</button>
+        <span class="status-line" id="save-token-result"></span>
+      </div>
+    </div>
+    `;
+
+  $('#btn-test').onclick = async () => {
+    const el = $('#test-result');
+    el.className = 'status-line';
+    el.textContent = '测试中…';
+    try {
+      const r = await api('/api/emby/test', {
+        method: 'POST',
+        body: { embyUrl: $('#set-embyUrl').value, embyApiKey: $('#set-embyApiKey').value }
+      });
+      el.className = 'status-line ok';
+      el.textContent = `连接成功：${r.serverName}（版本 ${r.version || '未知'}）`;
+    } catch (e) {
+      el.className = 'status-line err';
+      el.textContent = `连接失败：${e.message}`;
+    }
+  };
+
+  $('#copy-wh').onclick = () => {
+    navigator.clipboard.writeText($('#set-webhook-url').textContent.trim());
+    toast('Webhook 地址已复制');
+  };
+
+  function syncBgFields() {
+    const poster = $('#set-backgroundMode').value === 'poster';
+    $('#set-bgTop').disabled = poster;
+    $('#set-bgBottom').disabled = poster;
+  }
+  $('#set-backgroundMode').onchange = syncBgFields;
+  syncBgFields();
+
+  $('#btn-demo').onclick = () => {
+    const params = new URLSearchParams({
+      width: $('#set-width').value,
+      height: $('#set-height').value,
+      columns: $('#set-columns').value,
+      maxItems: $('#set-maxItems').value,
+      titleSize: $('#set-titleSize').value,
+      subtitleSize: $('#set-subtitleSize').value,
+      radius: $('#set-radius').value,
+      cellBorder: $('#set-cellBorder').value,
+      bgTop: $('#set-bgTop').value,
+      bgBottom: $('#set-bgBottom').value,
+      accent: $('#set-accent').value,
+      titleColor: $('#set-titleColor').value,
+      subtitleColor: $('#set-subtitleColor').value,
+      fontFamily: $('#set-fontFamily').value,
+      title: '我的电影合集'
+    });
+    params.set('size', $('#set-demo-size').value);
+    params.set('backgroundMode', $('#set-backgroundMode').value);
+    if (!$('#set-showCount').checked) params.set('showCount', '0');
+    openModal(`
+      <div class="modal-head"><h3>示例封面</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+      <img src="/api/demo-preview?${params.toString()}" alt="示例封面" style="max-width:430px;margin:0 auto;display:block">
+      <p class="modal-note">此预览仅展示当前设置的效果（使用示例海报）。点「保存并重新生成全部封面」后，真实封面才会按这些设置更新。</p>
+    `);
+  };
+
+  function collectCoverBody() {
+    return {
+      defaultPickBy: $('#set-defaultPickBy').value,
+      cover: {
+        width: Number($('#set-width').value),
+        height: Number($('#set-height').value),
+        columns: Number($('#set-columns').value),
+        maxItems: Number($('#set-maxItems').value),
+        titleSize: Number($('#set-titleSize').value),
+        subtitleSize: Number($('#set-subtitleSize').value),
+        radius: Number($('#set-radius').value),
+        cellBorder: Number($('#set-cellBorder').value),
+        bgTop: $('#set-bgTop').value,
+        bgBottom: $('#set-bgBottom').value,
+        accent: $('#set-accent').value,
+        titleColor: $('#set-titleColor').value,
+        subtitleColor: $('#set-subtitleColor').value,
+        fontFamily: $('#set-fontFamily').value.trim(),
+        fontFile: $('#set-fontFile').value.trim(),
+        backgroundMode: $('#set-backgroundMode').value,
+        showCount: $('#set-showCount').checked
+      }
+    };
+  }
+
+  async function saveSection(patch, resultId, successMsg = '已保存 ✅') {
+    const el = document.getElementById(resultId);
+    if (el) {
+      el.className = 'status-line';
+      el.textContent = '保存中…';
+    }
+    try {
+      const r = await api('/api/settings', { method: 'PUT', body: patch });
+      state.settings = r.settings;
+      await loadStatus();
+      if (el) {
+        el.className = 'status-line ok';
+        el.textContent = successMsg;
+      }
+      return true;
+    } catch (e) {
+      if (el) {
+        el.className = 'status-line err';
+        el.textContent = `保存失败：${e.message}`;
+      }
+      return false;
+    }
+  }
+
+  async function saveSettings() {
+    const body = collectCoverBody();
+    const r = await api('/api/settings', { method: 'PUT', body });
+    state.settings = r.settings;
+    await loadStatus();
+    return r.settings;
+  }
+
+  $('#btn-save-emby').onclick = () => saveSection({
+    embyUrl: $('#set-embyUrl').value.trim(),
+    embyApiKey: $('#set-embyApiKey').value.trim()
+  }, 'save-emby-result', '连接设置已保存 ✅');
+
+  $('#btn-save-auto').onclick = () => saveSection({
+    cron: $('#set-cron').value.trim(),
+    webhookDebounceMs: Number($('#set-webhookDebounceMs').value),
+    autoEnableNew: $('#set-autoEnableNew').checked,
+    syncOnStart: $('#set-syncOnStart').checked
+  }, 'save-auto-result', '自动更新设置已保存 ✅');
+
+  $('#btn-save-token').onclick = () => saveSection({
+    accessToken: $('#set-accessToken').value.trim()
+  }, 'save-token-result', '访问令牌已保存 ✅');
+
+  $('#btn-save-cover').onclick = () => saveSection(collectCoverBody(), 'save-cover-result', '封面设置已保存 ✅（重新生成后生效）');
+
+  $('#btn-save-regen').onclick = async () => {
+    const btn = $('#btn-save-regen');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 保存中…';
+    try {
+      await saveSettings();
+      toast('设置已保存，开始重新生成全部封面…', 'ok');
+      showSyncProgress();
+      api('/api/sync', { method: 'POST', body: { force: true } }).then(() => {}).catch(() => {});
+    } catch (e) {
+      toast(`保存失败：${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '保存并重新生成全部封面';
+    }
+  };
+
+}
+
+// ---------- 日志 ----------
+async function renderLogs() {
+  main.innerHTML = `
+    <div class="page-title">运行日志</div>
+    <div class="page-desc">最近的同步与 Webhook 记录（最多保留 500 条）</div>
+    <div class="row mb">
+      <button class="btn sm" id="btn-refresh-logs">刷新</button>
+      <span class="muted" id="log-count"></span>
+    </div>
+    <div class="panel" style="padding:10px 14px">
+      <table class="table"><thead><tr><th style="width:170px">时间</th><th style="width:70px">级别</th><th>内容</th></tr></thead><tbody id="log-body"></tbody></table>
+    </div>`;
+
+  async function refresh() {
+    try {
+      const r = await api('/api/logs');
+      state.logs = r.logs;
+      const tb = $('#log-body');
+      if (!tb) return;
+      $('#log-count').textContent = `共 ${r.logs.length} 条`;
+      tb.innerHTML = r.logs.slice(0, 120).map((l) => `
+        <tr>
+          <td class="muted" style="font-size:12px">${fmtTime(l.ts)}</td>
+          <td><span class="lvl-${esc(l.level)}">${esc(l.level)}</span></td>
+          <td>${esc(l.message)}</td>
+        </tr>`).join('') || '<tr><td colspan="3" class="empty">暂无日志</td></tr>';
+    } catch {
+      // 忽略轮询错误
+    }
+  }
+  $('#btn-refresh-logs').onclick = refresh;
+  await refresh();
+}
+
+// 启动
+nav();
+loadStatus();
+setInterval(() => {
+  loadStatus().then((s) => {
+    if (state.page === 'dashboard' && s && !s.running) {
+      // 概览页在同步结束后自动刷新一次
+      const prevRunning = state.status?.running;
+      if (prevRunning && !s.running) renderDashboard();
+    }
+    state.status = s;
+  });
+}, 15000);

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emby 封面工坊</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🎬</div>
+        <div>
+          <div class="brand-name">Emby 封面工坊</div>
+          <div class="brand-sub">合集封面生成器</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-page="dashboard" data-path="/"><span class="nav-ico">◉</span>概览</button>
+        <button class="nav-btn" data-page="targets" data-path="/targets"><span class="nav-ico">▦</span>合集管理</button>
+        <button class="nav-btn" data-page="settings" data-path="/settings"><span class="nav-ico">⚙</span>设置</button>
+        <button class="nav-btn" data-page="logs" data-path="/logs"><span class="nav-ico">☰</span>日志</button>
+      </nav>
+      <div class="side-status" id="side-status">
+        <span class="dot gray" id="side-dot"></span>
+        <span id="side-text">加载中…</span>
+      </div>
+    </aside>
+    <main id="main"></main>
+  </div>
+  <div id="toast-wrap"></div>
+  <div id="modal-root"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "emby-cover-studio",
+  "version": "1.0.0",
+  "description": "Emby 媒体库/合集封面自动生成工具：根据影片封面与库名合成封面，支持 Webhook 自动更新与定时更新，Docker 一键部署",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "mock": "node scripts/mock-emby.js",
+    "demo": "node scripts/demo-cover.js",
+    "test": "node scripts/test-integration.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
+}

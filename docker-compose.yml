@@ -1,0 +1,13 @@
+services:
+  emby-cover-studio:
+    build: .
+    image: emby-cover-studio:latest
+    container_name: emby-cover-studio
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=3000
+    restart: unless-stopped
