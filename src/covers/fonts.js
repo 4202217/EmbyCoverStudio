@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const CANDIDATES = [
   process.env.FONT_FILE,
+  '/usr/share/fonts/noto/NotoSansCJK-Regular.ttc', // Alpine（font-noto-cjk）
   '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
-  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', // Debian / Ubuntu
   '/System/Library/Fonts/PingFang.ttc',
   '/System/Library/Fonts/Hiragino Sans GB.ttc',
   '/Library/Fonts/Arial Unicode.ttf',
@@ -22,6 +24,25 @@ function guessFamily(file) {
   return 'sans-serif';
 }
 
+function looksCjk(file) {
+  const b = path.basename(String(file)).toLowerCase();
+  return /noto|pingfang|hiragino|yahei|msyh|sourcehans|simhei|simsun|cjk/i.test(b);
+}
+
+// 用 fontconfig 动态查找中文字体（适配不同发行版的安装路径）
+function matchCjkFont() {
+  try {
+    const out = execFileSync('fc-match', ['-f', '%{file}', 'Noto Sans CJK SC'], {
+      encoding: 'utf8',
+      timeout: 3000
+    });
+    const file = String(out).trim();
+    return file && fs.existsSync(file) && looksCjk(file) ? file : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveFont(coverSettings = {}) {
   const explicit = String(coverSettings.fontFile || '').trim();
   if (explicit && fs.existsSync(explicit)) {
@@ -31,6 +52,10 @@ export function resolveFont(coverSettings = {}) {
     if (c && fs.existsSync(c)) {
       return { file: c, family: coverSettings.fontFamily || guessFamily(c) };
     }
+  }
+  const matched = matchCjkFont();
+  if (matched) {
+    return { file: matched, family: coverSettings.fontFamily || guessFamily(matched) };
   }
   return { file: null, family: coverSettings.fontFamily || 'Noto Sans CJK SC' };
 }
