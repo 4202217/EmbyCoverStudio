@@ -27,6 +27,12 @@ function taskRecord({ name, type, trigger, status, updated = 0, unchanged = 0, f
   return { name, type, trigger, status, updated, unchanged, failed, error };
 }
 
+function effectivePickBy(target, settings) {
+  if (target?.pickBy === 'premiere') return 'premiere';
+  if (target?.pickBy === 'added') return 'added';
+  return settings.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+}
+
 async function mapLimit(items, limit, fn, shouldStop) {
   const results = new Array(items.length);
   let i = 0;
@@ -123,7 +129,7 @@ export function createSyncService(store) {
     const settings = store.settings;
     const size = resolveSize(target, settings.cover);
     const style = isValidStyle(target.template) ? target.template : 'single';
-    const pickBy = settings.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+    const pickBy = effectivePickBy(target, settings);
     const genSettings = { ...settings.cover, width: size.width, height: size.height };
     const settingsHash = sha1(JSON.stringify({ cover: genSettings, template: style, defaultPickBy: pickBy }));
     const { posters, total } = await collectPosters(target, client, genSettings, { single: style === 'single', pickBy });
@@ -367,7 +373,7 @@ export function createSyncService(store) {
       ? SIZE_PRESETS[overrides.size]
       : (overrides.width && overrides.height ? { width: overrides.width, height: overrides.height } : resolveSize(target, settings.cover));
     const style = isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : 'single');
-    const pickBy = store.settings.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+    const pickBy = effectivePickBy(target, store.settings);
     const genSettings = { ...settings.cover, width: size.width, height: size.height };
     if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {
       genSettings.backgroundMode = overrides.backgroundMode;

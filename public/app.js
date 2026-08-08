@@ -278,6 +278,14 @@ async function renderTargets() {
           <button class="btn sm primary" id="batch-gen" disabled>更新封面</button>
         </div>
       </div>
+      <div class="row" id="batch-pick-box" style="display:none;margin-top:10px;gap:8px;align-items:center">
+        <span class="muted" style="font-size:12px">批量设置选图依据</span>
+        <select id="batch-pick" style="width:150px;padding:6px 10px">
+          <option value="added">最新入库</option>
+          <option value="premiere">最新发行</option>
+        </select>
+        <span class="muted" style="font-size:11px" id="batch-pick-hint">应用到已选的 0 项</span>
+      </div>
     </div>
     <div class="tlist" id="target-list"><div class="empty">加载中…</div></div>`;
 
@@ -326,10 +334,12 @@ function drawTargets() {
     const thumb = t.coverUrl
       ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
       : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;font-size:22px;${thumbStyle}">🎬</div>`;
-    const sizeName = t.kind === 'library' ? '缩略图' : '海报';
+    const pickBy = t.pickBy || state.styles?.defaultPickBy || 'added';
+    const pickLabel = pickBy === 'premiere' ? '最新发行' : '最新入库';
+    const pickOpts = `<option value="added" ${pickBy === 'added' ? 'selected' : ''}>最新入库</option><option value="premiere" ${pickBy === 'premiere' ? 'selected' : ''}>最新发行</option>`;
     const status = t.lastError
       ? `<div class="err">⚠ ${esc(t.lastError)}</div>`
-      : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${esc(sizeName)} · ${t.itemCount || 0} 部影片</div>`;
+      : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${pickLabel} · ${t.itemCount || 0} 部影片</div>`;
     return `
       <div class="trow ${t.missing ? 'missing' : ''}">
         <input type="checkbox" class="tick" data-id="${esc(t.id)}" ${state.selected.has(t.id) ? 'checked' : ''}>
@@ -337,6 +347,13 @@ function drawTargets() {
         <div class="info">
           <div class="name">${esc(t.name)} ${kind}${t.missing ? '<span class="badge gray">已删除</span>' : ''}</div>
           ${status}
+          <div class="pick-config" data-pick-box="${esc(t.id)}" style="display:none;margin-top:8px">
+            <label class="row" style="gap:6px">
+              <span class="muted" style="font-size:12px">选图依据</span>
+              <select data-pick="${esc(t.id)}" style="width:150px;padding:5px 8px;font-size:12px">${pickOpts}</select>
+              <span class="muted" style="font-size:11px">保存后下次同步生效</span>
+            </label>
+          </div>
         </div>
         <div class="actions">
           <button class="btn sm primary" data-act="gen" data-id="${esc(t.id)}">更新</button>
@@ -365,6 +382,20 @@ function drawTargets() {
       if (el.checked) state.selected.add(el.dataset.id);
       else state.selected.delete(el.dataset.id);
       updateBatchUI();
+    };
+  });
+
+  box.querySelectorAll('select[data-pick]').forEach((el) => {
+    el.onchange = async () => {
+      try {
+        await api(`/api/targets/${el.dataset.pick}`, { method: 'PUT', body: { pickBy: el.value } });
+        const t = state.targets.find((x) => x.id === el.dataset.pick);
+        if (t) t.pickBy = el.value;
+        toast('选图依据已保存', 'ok');
+        drawTargets();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
     };
   });
 
@@ -414,6 +445,15 @@ function updateBatchUI() {
     selAll.checked = all.length === document.querySelectorAll('#target-list input.tick:checked').length;
     selAll.disabled = all.length === 0;
   }
+  const batchBox = $('#batch-pick-box');
+  if (batchBox) {
+    batchBox.style.display = n >= 2 ? '' : 'none';
+    const hint = $('#batch-pick-hint');
+    if (hint) hint.textContent = `应用到已选的 ${n} 项`;
+  }
+  document.querySelectorAll('.pick-config').forEach((el) => {
+    el.style.display = (n === 1 && state.selected.has(el.dataset.pickBox)) ? '' : 'none';
+  });
 }
 
 function bindBatch() {
@@ -429,6 +469,7 @@ function bindBatch() {
   $('#batch-enable').onclick = () => batchAction('enable');
   $('#batch-disable').onclick = () => batchAction('disable');
   $('#batch-gen').onclick = () => batchAction('generate');
+  $('#batch-pick').onchange = () => batchAction('pickBy', $('#batch-pick').value);
   const syncState = state.status?.sync;
   if (syncState && (syncState.running || syncState.status === 'paused')) showSyncProgress();
 }
@@ -438,7 +479,15 @@ async function batchAction(action, value = '') {
   if (!ids.length) return;
   try {
     const r = await api('/api/targets/batch', { method: 'POST', body: { ids, action, value } });
-    if (action === 'generate' || action === 'enable') {
+    if (action === 'pickBy') {
+      const v = value === 'premiere' ? 'premiere' : 'added';
+      for (const id of ids) {
+        const t = state.targets.find((x) => x.id === id);
+        if (t) t.pickBy = v;
+      }
+      toast(`已批量设置选图依据（${r.updated} 项）`, 'ok');
+      refreshTargets();
+    } else if (action === 'generate' || action === 'enable') {
       toast(`${action === 'generate' ? '已开始批量更新封面' : '已批量启用'}（${r.updated} 项）`, 'ok');
       showSyncProgress();
     } else if (action === 'disable') {

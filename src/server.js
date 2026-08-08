@@ -244,6 +244,9 @@ export async function createApp(options = {}) {
         return;
       }
       for (const id of ids) store.updateTarget(id, { template: style });
+    } else if (action === 'pickBy') {
+      const pick = body.value === 'premiere' ? 'premiere' : 'added';
+      for (const id of ids) store.updateTarget(id, { pickBy: pick });
     } else if (action === 'generate') {
       syncService.runSync({ reason: '批量更新', onlyIds: ids, force: true }).catch(() => {});
     } else {
@@ -264,6 +267,7 @@ export async function createApp(options = {}) {
     if ('enabled' in body) patch.enabled = Boolean(body.enabled);
     if ('template' in body) patch.template = String(body.template || 'single');
     if ('titleOverride' in body) patch.titleOverride = String(body.titleOverride || '').trim();
+    if ('pickBy' in body) patch.pickBy = body.pickBy === 'premiere' ? 'premiere' : 'added';
     if ('needsRegen' in body) patch.needsRegen = Boolean(body.needsRegen);
     store.updateTarget(target.id, patch);
     if (patch.enabled === true && !target.coverFile) {
