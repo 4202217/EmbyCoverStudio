@@ -27,7 +27,9 @@ export const LIBRARY_ITEM_TYPES = {
   musicvideos: ['MusicVideo'],
   homevideos: ['Video'],
   books: ['Book'],
-  photos: ['Photo']
+  photos: ['Photo'],
+  boxsets: ['BoxSet'],
+  collections: ['BoxSet']
 };
 
 const RELEVANT_EVENTS = new Set([
@@ -185,11 +187,14 @@ export class EmbyClient {
     if (target.kind === 'library') {
       const types = LIBRARY_ITEM_TYPES[target.collectionType] || [];
       if (types.length) qs.set('IncludeItemTypes', types.join(','));
+      else qs.set('ExcludeItemTypes', 'BoxSet,CollectionFolder,Folder,Person,Studio,Genre,Year');
       qs.set('SortBy', 'DateCreated');
       qs.set('SortOrder', 'Descending');
       qs.set('ParentId', target.id);
     } else {
       qs.set('ParentId', target.id);
+      // 封面候选只取影片等媒体条目，排除嵌套的合集/文件夹
+      qs.set('ExcludeItemTypes', 'BoxSet,CollectionFolder,Folder');
     }
     const data = await this._items(qs.toString());
     return (data.Items || []).map((i) => {

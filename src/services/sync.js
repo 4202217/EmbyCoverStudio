@@ -75,8 +75,10 @@ export function createSyncService(store) {
     return new EmbyClient(store.settings);
   }
 
-  async function cachedPoster(client, itemId, maxWidth) {
-    const file = path.join(CACHE_DIR, `${itemId}-${maxWidth}.img`);
+  async function cachedPoster(client, itemId, maxWidth, imageTag = '') {
+    // 缓存文件名带上图片版本号，封面在 Emby 中更新后能自动重新下载
+    const tag = String(imageTag || '').replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
+    const file = path.join(CACHE_DIR, `${itemId}-${maxWidth}-${tag}.img`);
     try {
       return await fs.readFile(file);
     } catch {
@@ -105,7 +107,7 @@ export function createSyncService(store) {
     const withPrimary = sorted.filter((i) => i.hasPrimary);
     const candidates = withPrimary.slice(0, limit);
     const withPosters = await mapLimit(candidates, 4, async (item) => {
-      const poster = await cachedPoster(client, item.id, posterW);
+      const poster = await cachedPoster(client, item.id, posterW, item.imageTag);
       return poster ? { ...item, poster } : null;
     }, shouldStop);
     return { posters: withPosters.filter(Boolean), total: withPrimary.length };

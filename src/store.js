@@ -123,6 +123,13 @@ export class Store {
     for (const t of Object.values(this.data.targets)) {
       if (!isValidStyle(t.template)) t.template = 'single';
     }
+    // 迁移：旧版本把「跟随全局默认」误存成了 added，统一改为空值
+    if (!this.data.settings.pickByMigrated) {
+      for (const t of Object.values(this.data.targets)) {
+        if (t.pickBy === 'added') t.pickBy = '';
+      }
+      this.data.settings.pickByMigrated = true;
+    }
     this.save();
   }
 
@@ -160,7 +167,6 @@ export class Store {
       enabled: false,
       template: this.settings?.defaultStyle || 'single',
       size: '',
-      pickBy: 'added',
       titleOverride: '',
       itemHash: '',
       coverFile: '',
@@ -170,7 +176,8 @@ export class Store {
       lastGeneratedAt: '',
       lastError: '',
       missing: false,
-      needsRegen: false
+      needsRegen: false,
+      pickBy: ''
     };
     this.data.targets[id] = { ...existing, ...partial, id };
     this.save();
