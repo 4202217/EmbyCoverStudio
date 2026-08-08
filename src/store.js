@@ -114,7 +114,8 @@ export class Store {
     const fresh = {
       settings: defaultSettings(),
       targets: {},
-      logs: []
+      logs: [],
+      tasks: []
     };
     this.data = deepMerge(fresh, raw || {});
     // 迁移：只保留单图/极简两种样式
@@ -188,5 +189,20 @@ export class Store {
     this.data.logs.push({ ts: new Date().toISOString(), level, message });
     if (this.data.logs.length > 500) this.data.logs = this.data.logs.slice(-500);
     this.save();
+  }
+
+  addTask(record) {
+    const last = this.data.tasks[this.data.tasks.length - 1];
+    this.data.tasks.push({
+      seq: (last?.seq || 0) + 1,
+      ts: new Date().toISOString(),
+      ...record
+    });
+    if (this.data.tasks.length > 300) this.data.tasks = this.data.tasks.slice(-300);
+    this.save();
+  }
+
+  listTasks() {
+    return [...this.data.tasks].reverse();
   }
 }

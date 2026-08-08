@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { PUBLIC_DIR, COVERS_DIR, PORT, HOST } from './config.js';
 import { Store, randomToken } from './store.js';
 import { setLogSink, info, warn, error } from './logger.js';
-import { Scheduler, parseCron } from './scheduler.js';
+import { Scheduler, parseCron, nextRunDate } from './scheduler.js';
 import { EmbyClient } from './emby/client.js';
 import { generateCover } from './covers/generator.js';
 import { placeholderPoster } from './covers/placeholders.js';
@@ -98,6 +98,20 @@ export async function createApp(options = {}) {
     }
   }
 
+  let nextRunCache = { at: 0, expr: '', value: null };
+  function getNextRun() {
+    const expr = store.settings.cron || '0 */6 * * *';
+    const now = Date.now();
+    if (nextRunCache.expr === expr && now - nextRunCache.at < 60000) return nextRunCache.value;
+    try {
+      const d = nextRunDate(parseCron(expr));
+      nextRunCache = { at: now, expr, value: d ? d.toISOString() : null };
+    } catch {
+      nextRunCache = { at: now, expr, value: null };
+    }
+    return nextRunCache.value;
+  }
+
   function checkAccessToken(req, res, pathname) {
     if (pathname.startsWith('/api/webhook')) return true;
     const token = store.settings.accessToken;
@@ -139,6 +153,7 @@ export async function createApp(options = {}) {
       },
       cron: settings.cron,
       cronValid: true,
+      nextRun: getNextRun(),
       webhookPending: webhookService.pending,
       webhook: { url: webhookUrl(req) },
       font: fontStatus(settings.cover),
@@ -343,6 +358,10 @@ export async function createApp(options = {}) {
 
   route('GET', '/api/logs', (req, res) => {
     sendJson(res, 200, { ok: true, logs: [...store.data.logs].reverse() });
+  });
+
+  route('GET', '/api/tasks', (req, res) => {
+    sendJson(res, 200, { ok: true, tasks: store.listTasks() });
   });
 
   route('GET', '/api/webhook/url', (req, res) => {

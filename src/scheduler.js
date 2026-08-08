@@ -71,6 +71,17 @@ export function matches(spec, date) {
   return true;
 }
 
+export function nextRunDate(spec, from = new Date()) {
+  const start = new Date(from);
+  start.setSeconds(0, 0);
+  // 最多向后找 32 天，覆盖按月触发的表达式
+  for (let i = 0; i < 32 * 24 * 60; i += 1) {
+    const d = new Date(start.getTime() + i * 60000);
+    if (matches(spec, d)) return d;
+  }
+  return null;
+}
+
 function minuteKey(date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}-${date.getMinutes()}`;
 }

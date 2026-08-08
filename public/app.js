@@ -23,7 +23,7 @@ window.addEventListener('popstate', () => {
 
 const state = {
   page: currentPage(),
-  filter: 'library',
+  filter: 'all',
   settings: null,
   status: null,
   targets: [],
@@ -116,6 +116,8 @@ function openModal(html) {
 }
 
 function nav() {
+  state.timers.forEach((t) => clearInterval(t));
+  state.timers = [];
   document.querySelectorAll('.nav-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.page === state.page);
   });
@@ -192,74 +194,54 @@ async function renderDashboard() {
       <div class="card"><div class="label">最近同步</div><div class="value" style="font-size:15px">${fmtTime(s.lastRun)}</div><div class="sub">${esc(s.lastReason || '')}${s.lastError ? ' · 有错误' : ''}</div></div>
       <div class="card"><div class="label">定时任务</div><div class="value" style="font-size:15px">${esc(s.cron || '—')}</div><div class="sub">${s.webhookPending ? 'Webhook 待执行' : '等待触发'}</div></div>
     </div>
+    ${s.font?.hint ? `<div class="status-line err" style="margin-bottom:14px">⚠ ${esc(s.font.hint)}（当前使用字体：${esc(s.font.fontFamily)}）</div>` : ''}
     <div class="panel">
-      <h3>操作</h3>
-      <div class="row">
-        <button class="btn" id="btn-test">测试连接</button>
-        <button class="btn primary" id="btn-sync">立即同步</button>
-        <label class="row" style="gap:6px;margin-left:6px"><input type="checkbox" id="force-sync"> 强制重新生成</label>
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h3 style="margin-bottom:0">任务记录</h3>
+        <button class="btn sm" id="btn-refresh-tasks">刷新</button>
       </div>
-      <div class="status-line" id="op-result"></div>
-    </div>
-    <div class="panel">
-      <h3>Webhook 地址（Emby 插件配置用）</h3>
-      <div class="row">
-        <div class="url-box" id="webhook-url">${esc(s.webhook?.url || '')}</div>
-        <button class="btn sm" id="copy-webhook">复制</button>
-      </div>
-      <p class="muted mt">在 Emby「Webhooks 插件」中添加该地址，勾选 项目已添加 / 项目已更新 / 媒体库新建 等事件，影片入库后会自动重新生成相关封面。</p>
-      ${s.font?.hint ? `<p class="status-line err">⚠ ${esc(s.font.hint)}（当前使用字体：${esc(s.font.fontFamily)}）</p>` : ''}
-    </div>
-    <div class="panel">
-      <h3>最近日志</h3>
-      <div id="mini-logs"></div>
-      <button class="btn sm mt" onclick="go('/logs')">查看全部日志</button>
+      <table class="table">
+        <thead><tr><th style="width:56px">序号</th><th>名称</th><th style="width:88px">类型</th><th style="width:170px">时间</th><th style="width:96px">触发方式</th><th style="width:110px">结果</th></tr></thead>
+        <tbody id="task-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+      </table>
     </div>`;
 
-  $('#btn-test').onclick = async () => {
-    const el = $('#op-result');
-    el.className = 'status-line';
-    el.textContent = '正在测试连接…';
+  const TYPE_LABEL = { single: '单张生成', batch: '批量更新', sync: '全量同步' };
+  const TRIGGER_LABEL = { manual: '手动', batch: '批量操作', scheduler: '定时任务', webhook: 'Webhook', startup: '服务启动', resume: '继续任务', enable: '启用合集' };
+
+  async function drawTasks() {
+    const tb = $('#task-body');
+    if (!tb) return;
+    let tasks = [];
     try {
-      const r = await api('/api/emby/test');
-      el.className = 'status-line ok';
-      el.textContent = `连接成功：${r.serverName}（版本 ${r.version || '未知'}）`;
-    } catch (e) {
-      el.className = 'status-line err';
-      el.textContent = `连接失败：${e.message}`;
+      tasks = (await api('/api/tasks')).tasks || [];
+    } catch {
+      tb.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>';
+      return;
     }
-  };
+    tb.innerHTML = tasks.map((t, i) => {
+      const status = t.status === 'success'
+        ? '<span class="badge ok-badge">成功</span>'
+        : t.status === 'failed'
+          ? `<span class="badge err-badge" title="${esc(t.error || '')}">失败</span>`
+          : t.status === 'cancelled'
+            ? '<span class="badge gray-badge">已取消</span>'
+            : '<span class="badge warn-badge">已暂停</span>';
+      const detail = [t.updated ? `更新 ${t.updated}` : '', t.unchanged ? `无变化 ${t.unchanged}` : '', t.failed ? `失败 ${t.failed}` : ''].filter(Boolean).join('，');
+      return `
+        <tr>
+          <td class="muted">${i + 1}</td>
+          <td>${esc(t.name)}</td>
+          <td>${esc(TYPE_LABEL[t.type] || t.type || '—')}</td>
+          <td class="muted" style="font-size:12px">${fmtTime(t.ts)}</td>
+          <td>${esc(TRIGGER_LABEL[t.trigger] || t.trigger || '—')}</td>
+          <td>${status}${detail ? `<div class="muted" style="font-size:11px">${esc(detail)}</div>` : ''}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="6" class="empty">暂无任务记录</td></tr>';
+  }
 
-  $('#btn-sync').onclick = async () => {
-    const btn = $('#btn-sync');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> 同步中…';
-    try {
-      const r = await api('/api/sync', { method: 'POST', body: { force: $('#force-sync').checked } });
-      toast(`同步完成：更新 ${r.updated} 个，无变化 ${r.unchanged} 个，失败 ${r.failed} 个`, r.failed ? 'err' : 'ok');
-      await loadStatus();
-      renderDashboard();
-    } catch (e) {
-      toast(e.message, 'err');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '立即同步';
-    }
-  };
-
-  $('#copy-webhook').onclick = () => {
-    navigator.clipboard.writeText($('#webhook-url').textContent.trim());
-    toast('Webhook 地址已复制');
-  };
-
-  const logs = await api('/api/logs').catch(() => ({ logs: [] }));
-  const mini = logs.logs.slice(0, 8).map((l) => `
-    <div style="padding:5px 0;border-bottom:1px solid rgba(39,51,73,0.4);font-size:13px">
-      <span class="lvl-${esc(l.level)}">[${esc(l.level)}]</span>
-      <span class="muted" style="font-size:12px">${fmtTime(l.ts)}</span>
-      <span> ${esc(l.message)}</span>
-    </div>`).join('');
-  $('#mini-logs').innerHTML = mini || '<div class="muted">暂无日志</div>';
+  $('#btn-refresh-tasks').onclick = drawTasks;
+  await drawTasks();
 }
 
 // ---------- 合集管理 ----------
@@ -268,9 +250,21 @@ async function renderTargets() {
     <div class="page-title">合集管理</div>
     <div class="page-desc">管理 Emby 媒体库与合集的封面生成，支持多选批量操作</div>
     <div class="chips" id="chips">
-      <button class="chip active" data-f="library">媒体库</button>
-      <button class="chip" data-f="collection">合集</button>
-      <button class="chip" data-f="enabled">仅启用</button>
+      <button class="chip ${state.filter === 'all' ? 'active' : ''}" data-f="all">全部</button>
+      <button class="chip ${state.filter === 'library' ? 'active' : ''}" data-f="library">媒体库</button>
+      <button class="chip ${state.filter === 'collection' ? 'active' : ''}" data-f="collection">合集</button>
+      <button class="chip ${state.filter === 'enabled' ? 'active' : ''}" data-f="enabled">仅启用</button>
+    </div>
+    <div class="progress-box" id="sync-progress" style="display:none">
+      <div class="row" style="justify-content:space-between">
+        <span class="progress-title">封面更新进度</span>
+        <span class="muted progress-text" id="sync-text">准备中…</span>
+      </div>
+      <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" id="sync-fill"></div></div>
+      <div class="row" style="gap:6px;margin-top:10px">
+        <button class="btn sm" id="sync-pause">暂停</button>
+        <button class="btn sm danger" id="sync-cancel">取消</button>
+      </div>
     </div>
     <div class="panel" style="padding:12px 16px">
       <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -359,7 +353,7 @@ function drawTargets() {
       try {
         const r = await api(`/api/targets/${el.dataset.id}`, { method: 'PUT', body: { enabled: el.checked } });
         toast(el.checked ? `已启用「${r.target.name}」，正在生成封面…` : `已停用「${r.target.name}」`, 'ok');
-        renderTargets();
+        refreshTargets();
       } catch (e) {
         toast(e.message, 'err');
       }
@@ -385,7 +379,7 @@ function drawTargets() {
       try {
         const r = await api(`/api/targets/${el.dataset.id}/generate`, { method: 'POST', body: {} });
         toast('封面已重新生成并上传 ✅', 'ok');
-        renderTargets();
+        refreshTargets();
       } catch (e) {
         toast(e.message, 'err');
         el.disabled = false;
@@ -394,6 +388,16 @@ function drawTargets() {
     };
   });
   updateBatchUI();
+}
+
+async function refreshTargets() {
+  try {
+    const r = await api('/api/targets');
+    state.targets = r.targets;
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+  if ($('#target-list')) drawTargets();
 }
 
 function updateBatchUI() {
@@ -425,6 +429,8 @@ function bindBatch() {
   $('#batch-enable').onclick = () => batchAction('enable');
   $('#batch-disable').onclick = () => batchAction('disable');
   $('#batch-gen').onclick = () => batchAction('generate');
+  const syncState = state.status?.sync;
+  if (syncState && (syncState.running || syncState.status === 'paused')) showSyncProgress();
 }
 
 async function batchAction(action, value = '') {
@@ -441,7 +447,7 @@ async function batchAction(action, value = '') {
         if (t) t.enabled = false;
       }
       toast(`已批量停用（${r.updated} 项）`, 'ok');
-      setTimeout(() => renderTargets(), 400);
+      setTimeout(() => refreshTargets(), 400);
     }
   } catch (e) {
     toast(e.message, 'err');
@@ -453,26 +459,23 @@ let syncTimer = null;
 function showSyncProgress() {
   clearInterval(syncTimer);
   syncTimer = null;
-  let card = document.getElementById('sync-progress');
-  if (!card) {
-    card = document.createElement('div');
-    card.className = 'toast sync-progress';
-    card.id = 'sync-progress';
-    card.innerHTML = `
-      <div style="font-weight:600;margin-bottom:8px">批量更新进度</div>
-      <div class="progress-bar"><div class="progress-fill" id="sync-fill"></div></div>
-      <div class="muted" id="sync-text" style="margin-top:8px;white-space:pre-line;font-size:12px">准备中…</div>
-      <div class="row" style="gap:6px;margin-top:8px">
-        <button class="btn sm" id="sync-pause">暂停</button>
-        <button class="btn sm danger" id="sync-cancel">取消</button>
-      </div>`;
-    $('#toast-wrap').appendChild(card);
+  if (state.page !== 'targets') {
+    go('/targets');
   }
-  card.dataset.done = '';
+  const box = document.getElementById('sync-progress');
+  if (!box) {
+    // 页面尚未渲染完成，稍后重试
+    setTimeout(showSyncProgress, 150);
+    return;
+  }
+  box.style.display = 'block';
+  box.dataset.done = '';
   const fill = $('#sync-fill');
   const text = $('#sync-text');
   const pauseBtn = $('#sync-pause');
   const cancelBtn = $('#sync-cancel');
+  pauseBtn.style.display = '';
+  cancelBtn.style.display = '';
   const labels = { idle: '空闲', running: '进行中', paused: '已暂停', cancelled: '已取消', done: '已完成', failed: '失败' };
   let finished = false;
 
@@ -491,36 +494,50 @@ function showSyncProgress() {
     if (s.failed) lines += `\n失败 ${s.failed} 个`;
     if (s.updated) lines += `\n已更新 ${s.updated} 个`;
     text.textContent = lines;
-    pauseBtn.textContent = s.status === 'paused' ? '继续' : '暂停';
-    pauseBtn.disabled = !s.running && s.status !== 'paused';
-    cancelBtn.disabled = !s.running && s.status !== 'paused';
+    const paused = s.status === 'paused';
+    pauseBtn.textContent = paused ? '继续' : '暂停';
+    pauseBtn.disabled = !s.running && !paused;
+    cancelBtn.disabled = !s.running && !paused;
+    if (paused) return; // 暂停时保留卡片与「继续/取消」按钮，等待用户操作
     if (!s.running && !finished) {
       finished = true;
-      card.dataset.done = '1';
+      box.dataset.done = '1';
       clearInterval(syncTimer);
       syncTimer = null;
       if (s.status === 'done') text.textContent = `${lines}\n全部完成 ✅`;
       if (s.status === 'cancelled') text.textContent = `${lines}\n任务已取消`;
+      if (s.status === 'failed') text.textContent = `${lines}\n任务失败`;
       pauseBtn.style.display = 'none';
       cancelBtn.style.display = 'none';
-      renderTargets();
+      refreshTargets();
       setTimeout(() => {
-        if (card.dataset.done === '1') card.remove();
+        if (box.dataset.done === '1') box.style.display = 'none';
       }, 6000);
     }
   }
 
   pauseBtn.onclick = async () => {
-    if (pauseBtn.textContent === '继续') {
-      await api('/api/sync/resume', { method: 'POST', body: {} });
-    } else {
-      await api('/api/sync/pause', { method: 'POST', body: {} });
+    try {
+      if (pauseBtn.textContent === '继续') {
+        await api('/api/sync/resume', { method: 'POST', body: {} });
+        toast('已继续任务', 'ok');
+      } else {
+        await api('/api/sync/pause', { method: 'POST', body: {} });
+        toast('已暂停任务', 'info');
+      }
+      refresh();
+    } catch (e) {
+      toast(e.message, 'err');
     }
-    refresh();
   };
   cancelBtn.onclick = async () => {
-    await api('/api/sync/cancel', { method: 'POST', body: {} });
-    refresh();
+    try {
+      await api('/api/sync/cancel', { method: 'POST', body: {} });
+      toast('已请求取消', 'info');
+      refresh();
+    } catch (e) {
+      toast(e.message, 'err');
+    }
   };
   syncTimer = setInterval(refresh, 1000);
   refresh();
@@ -541,7 +558,7 @@ function showPreview(id) {
       await api(`/api/targets/${encodeURIComponent(id)}/generate`, { method: 'POST', body: {} });
       closeModal();
       toast('封面已更新并上传 ✅', 'ok');
-      renderTargets();
+      refreshTargets();
     } catch (e) {
       toast(e.message, 'err');
       btn.disabled = false;
@@ -559,6 +576,7 @@ async function renderSettings() {
       state.styles = { styles: [{ id: 'grid', name: '经典拼图' }], sizes: [{ id: 'poster', label: '海报 2:3' }, { id: 'thumb', label: '缩略图 16:9' }] };
     }
   }
+  await loadStatus();
   let s;
   try {
     s = (await api('/api/settings')).settings;
@@ -585,11 +603,9 @@ async function renderSettings() {
         </label>
       </div>
       <div class="row">
+        <button class="btn primary" id="btn-save-emby">保存连接设置</button>
         <button class="btn" id="btn-test">测试连接</button>
         <span class="status-line" id="test-result"></span>
-      </div>
-      <div class="row" style="gap:10px">
-        <button class="btn primary" id="btn-save-emby">保存连接设置</button>
         <span class="status-line" id="save-emby-result"></span>
       </div>
     </div>
@@ -619,6 +635,17 @@ async function renderSettings() {
         <button class="btn primary" id="btn-save-auto">保存自动更新设置</button>
         <span class="status-line" id="save-auto-result"></span>
       </div>
+      <div class="auto-status">
+        <div class="auto-row"><span class="lab">上次触发</span><span id="set-lastRun">—</span></div>
+        <div class="auto-row"><span class="lab">上次结果</span><span id="set-lastResult">—</span></div>
+        <div class="auto-row"><span class="lab">下次定时</span><span id="set-nextRun">—</span></div>
+        <div class="auto-row"><span class="lab">最近错误</span><span id="set-lastError">—</span></div>
+        <div class="row mt">
+          <button class="btn" id="btn-test-webhook">发送测试通知</button>
+          <span class="status-line" id="test-webhook-result"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">「发送测试通知」会模拟 Emby 推送一个事件到上面的 Webhook 地址，可验证自动更新链路是否正常，并会安排一次自动同步。</p>
+      </div>
     </div>
 
     <div class="panel">
@@ -644,8 +671,6 @@ async function renderSettings() {
       <div class="grid-4">
         <label class="field"><span class="lab">宽度 px</span><input type="number" id="set-width" value="${c.width}" min="200" max="4096"></label>
         <label class="field"><span class="lab">高度 px</span><input type="number" id="set-height" value="${c.height}" min="200" max="4096"></label>
-        <label class="field"><span class="lab">列数</span><input type="number" id="set-columns" value="${c.columns}" min="1" max="8"></label>
-        <label class="field"><span class="lab">最多影片数</span><input type="number" id="set-maxItems" value="${c.maxItems}" min="1" max="64"></label>
         <label class="field"><span class="lab">标题字号</span><input type="number" id="set-titleSize" value="${c.titleSize}" min="18" max="480"></label>
         <label class="field"><span class="lab">副标题字号</span><input type="number" id="set-subtitleSize" value="${c.subtitleSize}" min="12" max="240"></label>
         <label class="field"><span class="lab">圆角 px</span><input type="number" id="set-radius" value="${c.radius}" min="0" max="200"></label>
@@ -663,13 +688,6 @@ async function renderSettings() {
         <label class="field"><span class="lab">副标题颜色</span><input type="color" id="set-subtitleColor" value="${c.subtitleColor}"></label>
       </div>
       <label class="row" style="gap:8px;margin-top:8px"><input type="checkbox" id="set-showCount" ${c.showCount ? 'checked' : ''}> 封面显示影片数量副标题</label>
-      <div class="row mt">
-        <select id="set-demo-size" style="width:150px">
-          <option value="poster">海报 2:3</option>
-          <option value="thumb">缩略图 16:9</option>
-        </select>
-        <button class="btn" id="btn-demo">预览示例封面</button>
-      </div>
       <div class="row mt" style="gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn" id="btn-save-cover">保存封面设置</button>
         <button class="btn primary" id="btn-save-regen">保存并重新生成全部封面</button>
@@ -713,6 +731,68 @@ async function renderSettings() {
     toast('Webhook 地址已复制');
   };
 
+  function updateAutoStatus() {
+    const st = state.status || {};
+    const setText = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+    if (st.lastRun) setText('set-lastRun', `${fmtTime(st.lastRun)}（${st.lastReason || '未知原因'}）`);
+    else setText('set-lastRun', '从未触发');
+    const c = st.counts || {};
+    const parts = [];
+    if (c.updated) parts.push(`更新 ${c.updated} 个`);
+    if (c.unchanged) parts.push(`无变化 ${c.unchanged} 个`);
+    if (c.failed) parts.push(`失败 ${c.failed} 个`);
+    setText('set-lastResult', parts.length ? parts.join('，') : (st.lastRun ? '完成' : '—'));
+    setText('set-nextRun', st.nextRun ? fmtTime(st.nextRun) : '—');
+    const errEl = document.getElementById('set-lastError');
+    if (errEl) {
+      errEl.textContent = st.lastError || '无';
+      errEl.className = st.lastError ? 'err-text' : 'ok-text';
+    }
+  }
+
+  $('#btn-test-webhook').onclick = async () => {
+    const btn = $('#btn-test-webhook');
+    const el = $('#test-webhook-result');
+    btn.disabled = true;
+    el.className = 'status-line';
+    el.textContent = '正在发送测试通知…';
+    try {
+      const urlInfo = await api('/api/webhook/url');
+      const payload = {
+        Event: 'Library.New',
+        Item: { Id: 'emby-cover-studio-test', Name: '测试通知', Type: 'CollectionFolder' }
+      };
+      const res = await fetch(urlInfo.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (!data.handled) throw new Error('事件未被识别');
+      el.className = 'status-line ok';
+      el.textContent = '测试通知已送达 ✅ 已安排自动同步';
+      toast('测试通知已送达，自动同步即将执行', 'ok');
+      loadStatus().then(updateAutoStatus);
+    } catch (e) {
+      el.className = 'status-line err';
+      el.textContent = `发送失败：${e.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  async function refreshAutoStatus() {
+    await loadStatus();
+    updateAutoStatus();
+  }
+  const autoTimer = setInterval(refreshAutoStatus, 5000);
+  state.timers.push(autoTimer);
+  updateAutoStatus();
+
   function syncBgFields() {
     const poster = $('#set-backgroundMode').value === 'poster';
     $('#set-bgTop').disabled = poster;
@@ -721,42 +801,12 @@ async function renderSettings() {
   $('#set-backgroundMode').onchange = syncBgFields;
   syncBgFields();
 
-  $('#btn-demo').onclick = () => {
-    const params = new URLSearchParams({
-      width: $('#set-width').value,
-      height: $('#set-height').value,
-      columns: $('#set-columns').value,
-      maxItems: $('#set-maxItems').value,
-      titleSize: $('#set-titleSize').value,
-      subtitleSize: $('#set-subtitleSize').value,
-      radius: $('#set-radius').value,
-      cellBorder: $('#set-cellBorder').value,
-      bgTop: $('#set-bgTop').value,
-      bgBottom: $('#set-bgBottom').value,
-      accent: $('#set-accent').value,
-      titleColor: $('#set-titleColor').value,
-      subtitleColor: $('#set-subtitleColor').value,
-      fontFamily: $('#set-fontFamily').value,
-      title: '我的电影合集'
-    });
-    params.set('size', $('#set-demo-size').value);
-    params.set('backgroundMode', $('#set-backgroundMode').value);
-    if (!$('#set-showCount').checked) params.set('showCount', '0');
-    openModal(`
-      <div class="modal-head"><h3>示例封面</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
-      <img src="/api/demo-preview?${params.toString()}" alt="示例封面" style="max-width:430px;margin:0 auto;display:block">
-      <p class="modal-note">此预览仅展示当前设置的效果（使用示例海报）。点「保存并重新生成全部封面」后，真实封面才会按这些设置更新。</p>
-    `);
-  };
-
   function collectCoverBody() {
     return {
       defaultPickBy: $('#set-defaultPickBy').value,
       cover: {
         width: Number($('#set-width').value),
         height: Number($('#set-height').value),
-        columns: Number($('#set-columns').value),
-        maxItems: Number($('#set-maxItems').value),
         titleSize: Number($('#set-titleSize').value),
         subtitleSize: Number($('#set-subtitleSize').value),
         radius: Number($('#set-radius').value),

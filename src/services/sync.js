@@ -12,6 +12,21 @@ function sha1(buf) {
   return crypto.createHash('sha1').update(buf).digest('hex');
 }
 
+function triggerOf(reason = '') {
+  const r = String(reason);
+  if (r.includes('定时')) return 'scheduler';
+  if (r.toLowerCase().includes('webhook')) return 'webhook';
+  if (r.includes('启动')) return 'startup';
+  if (r.includes('继续')) return 'resume';
+  if (r.includes('批量')) return 'batch';
+  if (r.includes('启用')) return 'enable';
+  return 'manual';
+}
+
+function taskRecord({ name, type, trigger, status, updated = 0, unchanged = 0, failed = 0, error = '' }) {
+  return { name, type, trigger, status, updated, unchanged, failed, error };
+}
+
 async function mapLimit(items, limit, fn, shouldStop) {
   const results = new Array(items.length);
   let i = 0;
@@ -234,11 +249,27 @@ export function createSyncService(store) {
         state.queueCurrent = '';
       }
       state.counts = { updated, unchanged, failed };
+      store.addTask(taskRecord({
+        name: onlyIds ? `批量更新（${targets.length} 项）` : `全量同步（${targets.length} 项）`,
+        type: onlyIds ? 'batch' : 'sync',
+        trigger: triggerOf(reason),
+        status: state.status === 'done' ? 'success' : state.status,
+        updated,
+        unchanged,
+        failed
+      }));
       info(`同步${state.status === 'cancelled' ? '已取消' : state.status === 'paused' ? '已暂停' : '完成'}：更新 ${updated} 个，无变化 ${unchanged} 个，失败 ${failed} 个`);
       return { ok: true, updated, unchanged, failed, status: state.status };
     } catch (e) {
       state.lastError = e.message;
       state.status = 'failed';
+      store.addTask(taskRecord({
+        name: onlyIds ? `批量更新（${onlyIds.length} 项）` : '全量同步',
+        type: onlyIds ? 'batch' : 'sync',
+        trigger: triggerOf(reason),
+        status: 'failed',
+        error: e.message
+      }));
       error(`同步失败：${e.message}`);
       return { ok: false, error: e.message };
     } finally {
@@ -302,9 +333,24 @@ export function createSyncService(store) {
       const r = await syncTarget(target, client, { force });
       state.queueDone = 1;
       state.status = 'done';
+      store.addTask(taskRecord({
+        name: target.name,
+        type: 'single',
+        trigger: triggerOf(reason),
+        status: 'success',
+        updated: r.changed ? 1 : 0,
+        unchanged: r.changed ? 0 : 1
+      }));
       return { ok: true, ...r };
     } catch (e) {
       state.status = 'failed';
+      store.addTask(taskRecord({
+        name: target.name,
+        type: 'single',
+        trigger: triggerOf(reason),
+        status: 'failed',
+        error: e.message
+      }));
       return { ok: false, error: e.message };
     } finally {
       state.running = false;
