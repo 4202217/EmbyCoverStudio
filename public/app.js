@@ -337,9 +337,11 @@ function drawTargets() {
     const pickBy = t.pickBy || state.styles?.defaultPickBy || 'added';
     const pickLabel = pickBy === 'premiere' ? '最新发行' : '最新入库';
     const pickOpts = `<option value="added" ${pickBy === 'added' ? 'selected' : ''}>最新入库</option><option value="premiere" ${pickBy === 'premiere' ? 'selected' : ''}>最新发行</option>`;
+    const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
+    const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount || 0} 部影片`;
     const status = t.lastError
       ? `<div class="err">⚠ ${esc(t.lastError)}</div>`
-      : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${pickLabel} · ${t.itemCount || 0} 部影片</div>`;
+      : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${pickLabel} · ${countText}</div>`;
     return `
       <div class="trow ${t.missing ? 'missing' : ''}">
         <input type="checkbox" class="tick" data-id="${esc(t.id)}" ${state.selected.has(t.id) ? 'checked' : ''}>

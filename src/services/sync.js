@@ -116,7 +116,10 @@ export function createSyncService(store) {
   async function buildCover(target, posters, genSettings, style, totalCount = posters.length) {
     const font = resolveFont(genSettings);
     const title = String(target.titleOverride || '').trim() || target.name || '未命名';
-    const subtitle = genSettings.showCount ? `共 ${totalCount} 部作品` : '';
+    const isBoxsetsLib = target.kind === 'library' && ['boxsets', 'collections'].includes(target.collectionType);
+    const subtitle = genSettings.showCount
+      ? (isBoxsetsLib ? `共 ${totalCount} 个合集` : `共 ${totalCount} 部作品`)
+      : '';
     return generateCover({
       title,
       subtitle,
