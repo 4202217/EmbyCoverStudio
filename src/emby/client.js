@@ -166,7 +166,7 @@ export class EmbyClient {
       Fields: 'ChildCount,PrimaryImageAspectRatio',
       SortBy: 'SortName',
       SortOrder: 'Ascending',
-      Limit: '500'
+      Limit: '2000'
     });
     const data = await this._items(qs.toString());
     return (data.Items || []).map((i) => ({

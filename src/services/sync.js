@@ -274,8 +274,11 @@ export function createSyncService(store) {
           itemCount: t.kind === 'collection' ? (t.childCount ?? 0) : (existing?.itemCount ?? 0)
         });
       }
-      for (const t of store.listTargets()) {
-        if (!seen.has(t.id) && !t.missing) store.updateTarget(t.id, { missing: true });
+      // 清理 Emby 中已不存在的媒体库/合集（重建媒体库后残留的旧条目）
+      const stale = store.listTargets().filter((t) => !seen.has(t.id));
+      for (const t of stale) {
+        info(`清理已不存在的目标：${t.name}`);
+        store.deleteTarget(t.id);
       }
       let targets = store.listTargets().filter((t) => seen.has(t.id));
       if (onlyIds) targets = targets.filter((t) => onlyIds.includes(t.id) && !t.locked);

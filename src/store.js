@@ -336,6 +336,15 @@ export class Store {
     return target;
   }
 
+  deleteTarget(id) {
+    const key = String(id);
+    if (!this.data.targets[key]) return null;
+    const target = this.data.targets[key];
+    delete this.data.targets[key];
+    this.save();
+    return target;
+  }
+
   addLog(level, message) {
     this.data.logs.push({ ts: new Date().toISOString(), level, message });
     if (this.data.logs.length > 500) this.data.logs = this.data.logs.slice(-500);
