@@ -247,6 +247,19 @@ input[type="color"] {
 .badge.err-badge { background: rgba(231, 76, 60, 0.15); color: var(--err); }
 .badge.warn-badge { background: rgba(243, 156, 18, 0.15); color: var(--warn); }
 .badge.gray-badge { background: rgba(142, 160, 187, 0.14); color: var(--muted); }
+.badge.trig-manual { background: rgba(142, 160, 187, 0.16); color: #aebcd4; }
+.badge.trig-batch { background: rgba(155, 89, 182, 0.2); color: #c39bd3; }
+.badge.trig-scheduler { background: rgba(243, 156, 18, 0.18); color: var(--warn); }
+.badge.trig-webhook { background: rgba(46, 204, 113, 0.16); color: var(--ok); }
+.badge.trig-startup { background: rgba(0, 164, 220, 0.16); color: var(--accent); }
+.badge.trig-resume { background: rgba(26, 188, 156, 0.16); color: #2fd0b4; }
+.badge.trig-enable { background: rgba(255, 110, 160, 0.16); color: #ff8bb8; }
+.task-err { color: var(--err); font-size: 11px; margin-top: 2px; line-height: 1.4; }
+.task-flash { animation: task-flash 0.6s ease; }
+@keyframes task-flash {
+  0% { background: rgba(0, 164, 220, 0.1); }
+  100% { background: transparent; }
+}
 
 .table { width: 100%; border-collapse: collapse; }
 .table th {
@@ -359,6 +372,25 @@ input[type="color"] {
 #modal-root .modal-head h3 { font-size: 16px; }
 .modal img { width: 100%; border-radius: 10px; }
 .modal-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+.modal .pv-row {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+  justify-content: center;
+}
+.modal .pv-row img {
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+  flex-shrink: 0;
+}
+.modal .pv-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+.modal .pv-side .modal-note { margin-top: 0; }
 
 .muted { color: var(--muted); }
 .mt { margin-top: 14px; }

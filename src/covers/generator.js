@@ -118,22 +118,6 @@ async function posterCell(buffer, w, h, radius, border, borderColor) {
   return cell;
 }
 
-async function gridCells({ list, cols, cellW, cellH, gap, x0, y0, radius, border }) {
-  const out = [];
-  for (let i = 0; i < list.length; i += 1) {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const x = Math.round(x0 + col * (cellW + gap));
-    const y = Math.round(y0 + row * (cellH + gap));
-    out.push({
-      input: await posterCell(list[i], cellW, cellH, radius, border, 'rgba(255,255,255,0.22)'),
-      left: x,
-      top: y
-    });
-  }
-  return out;
-}
-
 /**
  * 渲染标题 + 强调横线 + 副标题，返回图层（渲染在 topY=0，可整体位移）
  */
@@ -204,138 +188,6 @@ function buildCtx({ W, H, title, subtitle, settings, family, file, list }) {
   };
 }
 
-async function layoutGrid(ctx, list) {
-  const { W, H } = ctx;
-  const pad = Math.round(W * 0.045);
-  const gap = Math.round(W * 0.018);
-  const columns = clampInt(ctx.settings.columns, 1, 8, 3);
-  const titlePadTop = Math.round(H * 0.028);
-  const t = await titleLayers({ ctx, maxW: W - pad * 2, align: 'center', cx: W / 2 });
-  const titleZone = titlePadTop + t.height + Math.round(H * 0.03);
-  const availH = Math.max(80, H - titleZone - pad);
-  let cellW = (W - pad * 2 - (columns - 1) * gap) / columns;
-  let cellH = cellW * 1.5;
-  const rows = Math.ceil(list.length / columns);
-  let gridH = rows * cellH + (rows - 1) * gap;
-  if (gridH > availH) {
-    cellH = Math.max(24, (availH - (rows - 1) * gap) / rows);
-    cellW = cellH / 1.5;
-    gridH = rows * cellH + (rows - 1) * gap;
-  }
-  const gridW = columns * cellW + (columns - 1) * gap;
-  const gridX = Math.round((W - gridW) / 2);
-  const gridY = Math.round(titleZone);
-  const layers = [{ input: ctx.bg || await backgroundLayer(W, H, ctx.settings.bgTop || '#17233d', ctx.settings.bgBottom || '#0a0f1c', ctx.settings.accent) }];
-  layers.push(...await gridCells({ list, cols: columns, cellW, cellH, gap, x0: gridX, y0: gridY, radius: ctx.radius, border: ctx.border }));
-  for (const l of t.layers) l.top += titlePadTop;
-  layers.push(...t.layers);
-  return layers;
-}
-
-async function layoutSplit(ctx, list) {
-  const { W, H } = ctx;
-  const pad = Math.round(W * 0.05);
-  const gap = Math.round(W * 0.02);
-  const columns = clampInt(ctx.settings.columns, 1, 8, 3);
-  const titleColW = Math.round(W * 0.34);
-  const gridX = titleColW + gap;
-  const gridW = W - pad - gridX;
-  const availH = H - pad * 2;
-  let cellW = (gridW - (columns - 1) * gap) / columns;
-  let cellH = cellW * 1.5;
-  const rows = Math.ceil(list.length / columns);
-  let gridH = rows * cellH + (rows - 1) * gap;
-  if (gridH > availH) {
-    cellH = Math.max(24, (availH - (rows - 1) * gap) / rows);
-    cellW = cellH / 1.5;
-    gridH = rows * cellH + (rows - 1) * gap;
-  }
-  const gridTotalW = columns * cellW + (columns - 1) * gap;
-  const startX = Math.round(gridX + (gridW - gridTotalW) / 2);
-  const startY = Math.round((H - gridH) / 2);
-  const layers = [{ input: ctx.bg || await backgroundLayer(W, H, ctx.settings.bgTop || '#17233d', ctx.settings.bgBottom || '#0a0f1c', ctx.settings.accent) }];
-  layers.push(...await gridCells({ list, cols: columns, cellW, cellH, gap, x0: startX, y0: startY, radius: ctx.radius, border: ctx.border }));
-  const t = await titleLayers({ ctx, maxW: titleColW - pad * 0.4, align: 'left', cx: pad, centerIn: H });
-  layers.push(...t.layers);
-  return layers;
-}
-
-async function layoutSpotlight(ctx, list) {
-  const { W, H } = ctx;
-  const pad = Math.round(W * 0.045);
-  const gap = Math.round(W * 0.02);
-  const columns = clampInt(ctx.settings.columns, 1, 8, 2);
-  const titlePadTop = Math.round(H * 0.025);
-  const t = await titleLayers({ ctx, maxW: W - pad * 2, align: 'center', cx: W / 2 });
-  const titleZone = titlePadTop + t.height + Math.round(H * 0.022);
-  const availH = Math.max(80, H - titleZone - pad);
-  let heroW = Math.round(W * 0.34);
-  let heroH = heroW * 1.5;
-  if (heroH > availH) {
-    heroH = availH;
-    heroW = heroH / 1.5;
-  }
-  const heroX = pad;
-  const heroY = Math.round(titleZone + (availH - heroH) / 2);
-  const rightX = Math.round(heroX + heroW + gap);
-  const rightW = Math.max(120, W - pad - rightX);
-  const rest = list.slice(1);
-  const layers = [{ input: ctx.bg || await backgroundLayer(W, H, ctx.settings.bgTop || '#17233d', ctx.settings.bgBottom || '#0a0f1c', ctx.settings.accent) }];
-  if (list.length) {
-    layers.push({ input: await posterCell(list[0], heroW, heroH, ctx.radius, ctx.border, 'rgba(255,255,255,0.3)'), left: heroX, top: heroY });
-  }
-  if (rest.length) {
-    let cellW = (rightW - (columns - 1) * gap) / columns;
-    let cellH = cellW * 1.5;
-    const rows = Math.ceil(rest.length / columns);
-    let gridH = rows * cellH + (rows - 1) * gap;
-    if (gridH > availH) {
-      cellH = Math.max(24, (availH - (rows - 1) * gap) / rows);
-      cellW = cellH / 1.5;
-      gridH = rows * cellH + (rows - 1) * gap;
-    }
-    const totalW = columns * cellW + (columns - 1) * gap;
-    const startX = Math.round(rightX + (rightW - totalW) / 2);
-    const startY = Math.round(titleZone + (availH - gridH) / 2);
-    layers.push(...await gridCells({ list: rest, cols: columns, cellW, cellH, gap, x0: startX, y0: startY, radius: ctx.radius, border: ctx.border }));
-  }
-  for (const l of t.layers) l.top += titlePadTop;
-  layers.push(...t.layers);
-  return layers;
-}
-
-async function layoutFilmstrip(ctx, list) {
-  const { W, H } = ctx;
-  const pad = Math.round(W * 0.05);
-  const gap = Math.round(W * 0.012);
-  const titlePadTop = Math.round(H * 0.035);
-  const t = await titleLayers({ ctx, maxW: W - pad * 2, align: 'center', cx: W / 2 });
-  const stripTop = titlePadTop + t.height + Math.round(H * 0.03);
-  const stripH = Math.max(80, H - stripTop - pad);
-  let cellH = Math.min(stripH, Math.round(H * 0.5));
-  let cellW = cellH * (2 / 3);
-  const n = list.length;
-  let totalW = n * cellW + (n - 1) * gap;
-  if (totalW > W - pad * 2) {
-    cellW = (W - pad * 2 - (n - 1) * gap) / n;
-    cellH = cellW * 1.5;
-    totalW = n * cellW + (n - 1) * gap;
-  }
-  const startX = Math.round((W - totalW) / 2);
-  const y = Math.round(stripTop + (stripH - cellH) / 2);
-  const layers = [{ input: ctx.bg || await backgroundLayer(W, H, ctx.settings.bgTop || '#17233d', ctx.settings.bgBottom || '#0a0f1c', ctx.settings.accent) }];
-  for (let i = 0; i < n; i += 1) {
-    layers.push({
-      input: await posterCell(list[i], cellW, cellH, ctx.radius, ctx.border, 'rgba(255,255,255,0.22)'),
-      left: Math.round(startX + i * (cellW + gap)),
-      top: y
-    });
-  }
-  for (const l of t.layers) l.top += titlePadTop;
-  layers.push(...t.layers);
-  return layers;
-}
-
 async function layoutSingle(ctx, list) {
   const { W, H } = ctx;
   const pad = Math.round(W * 0.05);
@@ -381,14 +233,13 @@ async function layoutSingle(ctx, list) {
  * @param {string} [opts.subtitle] 副标题（如影片数量）
  * @param {Buffer[]} opts.posters 影片封面图
  * @param {object} opts.settings 封面设置（cover 字段）
- * @param {string} [opts.style] 样式：single/grid/split/spotlight/filmstrip
+ * @param {string} [opts.style] 样式（当前仅 single 单图海报）
  * @param {object} [opts.font] 字体信息
  */
-export async function generateCover({ title, subtitle = '', posters = [], settings = {}, style = 'grid', font }) {
+export async function generateCover({ title, subtitle = '', posters = [], settings = {}, style = 'single', font }) {
   const W = clampInt(settings.width, 200, 4096, 1000);
   const H = clampInt(settings.height, 200, 4096, 1500);
-  const maxItems = clampInt(settings.maxItems, 1, 64, 9);
-  const list = posters.slice(0, maxItems).filter(Boolean);
+  const list = posters.filter(Boolean);
   if (!list.length) throw new Error('没有可用的影片封面，无法生成');
 
   const fontInfo = font || resolveFont(settings);
@@ -399,12 +250,8 @@ export async function generateCover({ title, subtitle = '', posters = [], settin
     ctx.bg = await posterBackground(list[0], W, H);
   }
 
-  let layers;
-  if (style === 'split') layers = await layoutSplit(ctx, list);
-  else if (style === 'spotlight') layers = await layoutSpotlight(ctx, list);
-  else if (style === 'filmstrip') layers = await layoutFilmstrip(ctx, list);
-  else if (style === 'single') layers = await layoutSingle(ctx, list);
-  else layers = await layoutGrid(ctx, list);
+  // 当前仅保留单图海报样式
+  const layers = await layoutSingle(ctx, list);
 
   return sharp({
     create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }

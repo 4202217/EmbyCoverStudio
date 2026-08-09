@@ -191,6 +191,8 @@ async function renderDashboard() {
     <div class="cards">
       <div class="card"><div class="label">Emby 服务器</div><div class="value" style="font-size:15px">${embyState}</div><div class="sub">${emby.serverName ? esc(emby.serverName) + ' v' + esc(emby.version || '') : ''}</div></div>
       <div class="card"><div class="label">监控中的合集</div><div class="value">${s.stats?.enabled ?? 0}<span style="font-size:13px;color:var(--muted)"> / ${s.stats?.targets ?? 0}</span></div><div class="sub">已生成封面 ${s.stats?.generated ?? 0} 个</div></div>
+      <div class="card"><div class="label">封面生成张数</div><div class="value">${s.stats?.coversGenerated ?? 0}</div><div class="sub">累计生成（含重新生成）</div></div>
+      <div class="card"><div class="label">任务触发次数</div><div class="value">${s.stats?.taskCount ?? 0}</div><div class="sub">同步 / 更新 / 批量等</div></div>
       <div class="card"><div class="label">最近同步</div><div class="value" style="font-size:15px">${fmtTime(s.lastRun)}</div><div class="sub">${esc(s.lastReason || '')}${s.lastError ? ' · 有错误' : ''}</div></div>
       <div class="card"><div class="label">定时任务</div><div class="value" style="font-size:15px">${esc(s.cron || '—')}</div><div class="sub">${s.webhookPending ? 'Webhook 待执行' : '等待触发'}</div></div>
     </div>
@@ -206,7 +208,7 @@ async function renderDashboard() {
       </table>
     </div>`;
 
-  const TYPE_LABEL = { single: '单张生成', batch: '批量更新', sync: '全量同步' };
+  const TYPE_LABEL = { single: '单张生成', batch: '批量更新', sync: '全量同步', precise: '精准更新' };
   const TRIGGER_LABEL = { manual: '手动', batch: '批量操作', scheduler: '定时任务', webhook: 'Webhook', startup: '服务启动', resume: '继续任务', enable: '启用合集' };
 
   async function drawTasks() {
@@ -223,24 +225,43 @@ async function renderDashboard() {
       const status = t.status === 'success'
         ? '<span class="badge ok-badge">成功</span>'
         : t.status === 'failed'
-          ? `<span class="badge err-badge" title="${esc(t.error || '')}">失败</span>`
+          ? '<span class="badge err-badge">失败</span>'
           : t.status === 'cancelled'
             ? '<span class="badge gray-badge">已取消</span>'
             : '<span class="badge warn-badge">已暂停</span>';
       const detail = [t.updated ? `更新 ${t.updated}` : '', t.unchanged ? `无变化 ${t.unchanged}` : '', t.failed ? `失败 ${t.failed}` : ''].filter(Boolean).join('，');
+      const errText = t.status === 'failed' && t.error ? `<div class="task-err" title="${esc(t.error)}">${esc(t.error)}</div>` : '';
+      const trigLabel = TRIGGER_LABEL[t.trigger] || t.trigger || '—';
       return `
         <tr>
-          <td class="muted">${i + 1}</td>
+          <td class="muted">${t.seq ?? (i + 1)}</td>
           <td>${esc(t.name)}</td>
           <td>${esc(TYPE_LABEL[t.type] || t.type || '—')}</td>
           <td class="muted" style="font-size:12px">${fmtTime(t.ts)}</td>
-          <td>${esc(TRIGGER_LABEL[t.trigger] || t.trigger || '—')}</td>
-          <td>${status}${detail ? `<div class="muted" style="font-size:11px">${esc(detail)}</div>` : ''}</td>
+          <td><span class="badge trig-${esc(t.trigger || 'manual')}">${esc(trigLabel)}</span></td>
+          <td>${status}${detail ? `<div class="muted" style="font-size:11px">${esc(detail)}</div>` : ''}${errText}</td>
         </tr>`;
     }).join('') || '<tr><td colspan="6" class="empty">暂无任务记录</td></tr>';
   }
 
-  $('#btn-refresh-tasks').onclick = drawTasks;
+  $('#btn-refresh-tasks').onclick = async () => {
+    const btn = $('#btn-refresh-tasks');
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> 刷新中…';
+    try {
+      await drawTasks();
+      const tb = $('#task-body');
+      if (tb) {
+        tb.classList.remove('task-flash');
+        void tb.offsetWidth; // 重置动画，保证每次点击都闪烁
+        tb.classList.add('task-flash');
+      }
+    } finally {
+      btn.innerHTML = original;
+      btn.disabled = false;
+    }
+  };
   await drawTasks();
 }
 
@@ -339,9 +360,10 @@ function drawTargets() {
     const pickOpts = `<option value="added" ${pickBy === 'added' ? 'selected' : ''}>最新入库</option><option value="premiere" ${pickBy === 'premiere' ? 'selected' : ''}>最新发行</option>`;
     const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
     const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount || 0} 部影片`;
+    const sourceLine = t.posterSource ? `<div class="meta">海报来源：${esc(t.posterSource)}</div>` : '';
     const status = t.lastError
       ? `<div class="err">⚠ ${esc(t.lastError)}</div>`
-      : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${pickLabel} · ${countText}</div>`;
+      : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${pickLabel} · ${countText}</div>${sourceLine}`;
     return `
       <div class="trow ${t.missing ? 'missing' : ''}">
         <input type="checkbox" class="tick" data-id="${esc(t.id)}" ${state.selected.has(t.id) ? 'checked' : ''}>
@@ -597,9 +619,13 @@ function showSyncProgress() {
 function showPreview(id) {
   openModal(`
     <div class="modal-head"><h3>封面预览</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
-    <img src="/api/preview/${encodeURIComponent(id)}?t=${Date.now()}" alt="封面预览" style="max-width:430px;margin:0 auto;display:block">
-    <p class="modal-note">预览使用 Emby 中的真实影片封面实时合成，不会上传。尺寸按类型固定：合集=海报，媒体库=缩略图。</p>
-    <div class="row mt"><button class="btn primary" id="pv-update">更新并上传</button></div>
+    <div class="pv-row">
+      <img src="/api/preview/${encodeURIComponent(id)}?t=${Date.now()}" alt="封面预览">
+      <div class="pv-side">
+        <p class="modal-note">使用 Emby 中的真实影片封面实时合成，不会上传。</p>
+        <button class="btn primary" id="pv-update">更新并上传</button>
+      </div>
+    </div>
   `);
   $('#pv-update').onclick = async () => {
     const btn = $('#pv-update');

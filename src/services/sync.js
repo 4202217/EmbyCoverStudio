@@ -98,14 +98,13 @@ export function createSyncService(store) {
     return [...items].sort((a, b) => (b.dateCreated || '').localeCompare(a.dateCreated || ''));
   }
 
-  async function collectPosters(target, client, settings, { single = false, pickBy = 'added' } = {}) {
+  async function collectPosters(target, client, settings, { pickBy = 'added' } = {}) {
     // 元数据拉取上限提高，保证副标题数量统计完整（仅下载需要的海报图）
     const raw = await client.getCoverItems(target, 500);
-    const sorted = single ? sortByPick(raw, pickBy) : raw;
-    const posterW = Math.max(160, Math.round(settings.width / Math.max(1, settings.columns)) + 40);
-    const limit = single ? 1 : settings.maxItems;
+    const sorted = sortByPick(raw, pickBy);
+    const posterW = Math.max(240, Math.round(settings.width * 0.4));
     const withPrimary = sorted.filter((i) => i.hasPrimary);
-    const candidates = withPrimary.slice(0, limit);
+    const candidates = withPrimary.slice(0, 1);
     const withPosters = await mapLimit(candidates, 4, async (item) => {
       const poster = await cachedPoster(client, item.id, posterW, item.imageTag);
       return poster ? { ...item, poster } : null;
@@ -137,13 +136,20 @@ export function createSyncService(store) {
     const pickBy = effectivePickBy(target, settings);
     const genSettings = { ...settings.cover, width: size.width, height: size.height };
     const settingsHash = sha1(JSON.stringify({ cover: genSettings, template: style, defaultPickBy: pickBy }));
-    const { posters, total } = await collectPosters(target, client, genSettings, { single: style === 'single', pickBy });
+    const { posters, total } = await collectPosters(target, client, genSettings, { pickBy });
     const hash = sha1(posters.map((p) => `${p.id}:${p.imageTag}`).join('|'));
     const localFile = path.join(COVERS_DIR, `${target.id}.png`);
     let png = null;
     const unchanged = hash === target.itemHash && settingsHash === target.coverSettingsHash;
     if (!force && unchanged && target.coverFile && !target.needsRegen && !target.needsUpload) {
-      if (target.itemCount !== total) store.updateTarget(target.id, { itemCount: total, posterCount: posters.length });
+      const patch = {};
+      if (target.itemCount !== total) {
+        patch.itemCount = total;
+        patch.posterCount = posters.length;
+      }
+      const src = posters[0]?.name || '';
+      if (target.posterSource !== src) patch.posterSource = src;
+      if (Object.keys(patch).length) store.updateTarget(target.id, patch);
       return { changed: false };
     }
     const canReuse = !force && unchanged && target.needsUpload && target.coverFile;
@@ -161,6 +167,7 @@ export function createSyncService(store) {
       coverHash: sha1(png),
       itemCount: total,
       posterCount: posters.length,
+      posterSource: posters[0]?.name || '',
       lastGeneratedAt: now,
       needsRegen: false,
       missing: false
@@ -260,10 +267,12 @@ export function createSyncService(store) {
         state.queueCurrent = '';
       }
       state.counts = { updated, unchanged, failed };
+      const trig = triggerOf(reason);
+      const precise = Boolean(onlyIds) && trig === 'webhook';
       store.addTask(taskRecord({
-        name: onlyIds ? `批量更新（${targets.length} 项）` : `全量同步（${targets.length} 项）`,
-        type: onlyIds ? 'batch' : 'sync',
-        trigger: triggerOf(reason),
+        name: onlyIds ? (precise ? `精准更新（${targets.length} 项）` : `批量更新（${targets.length} 项）`) : `全量同步（${targets.length} 项）`,
+        type: precise ? 'precise' : onlyIds ? 'batch' : 'sync',
+        trigger: trig,
         status: state.status === 'done' ? 'success' : state.status,
         updated,
         unchanged,
@@ -274,10 +283,12 @@ export function createSyncService(store) {
     } catch (e) {
       state.lastError = e.message;
       state.status = 'failed';
+      const trig = triggerOf(reason);
+      const precise = Boolean(onlyIds) && trig === 'webhook';
       store.addTask(taskRecord({
-        name: onlyIds ? `批量更新（${onlyIds.length} 项）` : '全量同步',
-        type: onlyIds ? 'batch' : 'sync',
-        trigger: triggerOf(reason),
+        name: onlyIds ? (precise ? `精准更新（${onlyIds.length} 项）` : `批量更新（${onlyIds.length} 项）`) : '全量同步',
+        type: precise ? 'precise' : onlyIds ? 'batch' : 'sync',
+        trigger: trig,
         status: 'failed',
         error: e.message
       }));
@@ -383,7 +394,7 @@ export function createSyncService(store) {
     if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {
       genSettings.backgroundMode = overrides.backgroundMode;
     }
-    const { posters, total } = await collectPosters(target, client, genSettings, { single: style === 'single', pickBy });
+    const { posters, total } = await collectPosters(target, client, genSettings, { pickBy });
     if (!posters.length) throw new Error('未找到任何带封面的影片');
     return buildCover(target, posters, genSettings, style, total);
   }

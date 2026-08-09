@@ -210,6 +210,26 @@ export class EmbyClient {
     });
   }
 
+  // 查询条目所属的祖先（媒体库、合集等），用于 Webhook 精准定位相关合集
+  async getItemAncestors(itemId) {
+    const uid = await this._ensureUser();
+    const paths = uid
+      ? [`/Users/${uid}/Items/${itemId}/Ancestors`, `/Items/${itemId}/Ancestors`]
+      : [`/Items/${itemId}/Ancestors`];
+    let lastErr = null;
+    for (const p of paths) {
+      try {
+        const data = await this._json(p);
+        const items = Array.isArray(data) ? data : (data.Items || []);
+        return items.map((a) => ({ id: String(a.Id || ''), name: a.Name || '', type: a.Type || '' }));
+      } catch (e) {
+        lastErr = e;
+        if (e.status !== 401 && e.status !== 404) throw e;
+      }
+    }
+    throw lastErr;
+  }
+
   async getImage(itemId, maxWidth = 400) {
     const p = `/Items/${itemId}/Images/Primary?maxWidth=${maxWidth}&quality=90`;
     try {

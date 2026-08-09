@@ -85,6 +85,9 @@ await fetch(`${MOCK}/__mock/add-movie`, {
   body: JSON.stringify({ id: 'm-new', name: '新片入库' })
 });
 const beforeUpload = stateBefore.uploads['lib-movies']?.count || 0;
+const beforeUploadCol1 = stateBefore.uploads['col-1']?.count || 0;
+const beforeUploadCol2 = stateBefore.uploads['col-2']?.count || 0;
+const beforeUploadLibTv = stateBefore.uploads['lib-tv']?.count || 0;
 const wh = await api('GET', '/api/webhook/url');
 const token = new URL(wh.data.url).searchParams.get('token');
 r = await api('POST', `/api/webhook/emby?token=${token}`, {
@@ -92,10 +95,18 @@ r = await api('POST', `/api/webhook/emby?token=${token}`, {
   Item: { Id: 'm-new', Name: '新片入库' }
 });
 check('Webhook 接收成功', r.status === 200 && r.data.handled === true);
-await sleep(2500);
+let taskAfter = null;
+for (let waited = 0; waited < 10000; waited += 500) {
+  await sleep(500);
+  taskAfter = (await api('GET', '/api/tasks')).data.tasks[0];
+  if (taskAfter?.trigger === 'webhook') break;
+}
 const stateAfter = (await (await fetch(`${MOCK}/__mock/state`)).json());
 const afterUpload = stateAfter.uploads['lib-movies']?.count || 0;
 check('入库后自动重新生成并上传', afterUpload > beforeUpload, `before=${beforeUpload} after=${afterUpload}`);
+check('精准更新：无关合集未被重传', stateAfter.uploads['col-1']?.count === beforeUploadCol1 && stateAfter.uploads['col-2']?.count === beforeUploadCol2 && stateAfter.uploads['lib-tv']?.count === beforeUploadLibTv,
+  `col-1 ${beforeUploadCol1}->${stateAfter.uploads['col-1']?.count || 0}, col-2 ${beforeUploadCol2}->${stateAfter.uploads['col-2']?.count || 0}, lib-tv ${beforeUploadLibTv}->${stateAfter.uploads['lib-tv']?.count || 0}`);
+check('精准更新任务类型正确', taskAfter.type === 'precise' && taskAfter.trigger === 'webhook', JSON.stringify(taskAfter));
 
 console.log('== 4. 预览与演示 ==');
 r = await api('GET', '/api/demo-preview?width=400&height=600&columns=2&maxItems=4&title=演示合集');

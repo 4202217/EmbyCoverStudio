@@ -23,8 +23,6 @@ export function defaultSettings() {
     cover: {
       width: 1000,
       height: 1500,
-      columns: 3,
-      maxItems: 9,
       titleSize: 84,
       subtitleSize: 36,
       titleColor: '#ffffff',
@@ -42,7 +40,7 @@ export function defaultSettings() {
   };
 }
 
-const COVER_NUM_FIELDS = ['width', 'height', 'columns', 'maxItems', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
+const COVER_NUM_FIELDS = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
 const COVER_BOOL_FIELDS = ['showCount'];
 const COVER_STR_FIELDS = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
 

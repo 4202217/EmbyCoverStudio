@@ -10,7 +10,7 @@ import { EmbyClient } from './emby/client.js';
 import { generateCover } from './covers/generator.js';
 import { placeholderPoster } from './covers/placeholders.js';
 import { fontStatus } from './covers/fonts.js';
-import { STYLES, SIZE_PRESETS, DEFAULT_SIZE_BY_KIND, STYLE_SIZE_MAP, PICK_BY_OPTIONS } from './covers/styles.js';
+import { STYLES, SIZE_PRESETS, DEFAULT_SIZE_BY_KIND } from './covers/styles.js';
 import { createSyncService } from './services/sync.js';
 import { createWebhookService } from './services/webhook.js';
 
@@ -134,6 +134,7 @@ export async function createApp(options = {}) {
   route('GET', '/api/status', async (req, res) => {
     const settings = store.settings;
     const targets = store.listTargets();
+    const tasks = store.listTasks();
     const s = syncService.state;
     sendJson(res, 200, {
       ok: true,
@@ -149,7 +150,9 @@ export async function createApp(options = {}) {
         enabled: targets.filter((t) => t.enabled).length,
         generated: targets.filter((t) => t.coverFile).length,
         missing: targets.filter((t) => t.missing).length,
-        failed: targets.filter((t) => t.lastError).length
+        failed: targets.filter((t) => t.lastError).length,
+        coversGenerated: tasks.reduce((sum, t) => sum + (t.updated || 0), 0),
+        taskCount: tasks.length
       },
       cron: settings.cron,
       cronValid: true,
@@ -218,8 +221,6 @@ export async function createApp(options = {}) {
       styles: STYLES,
       sizes: Object.values(SIZE_PRESETS),
       defaults: DEFAULT_SIZE_BY_KIND,
-      sizeMap: STYLE_SIZE_MAP,
-      pickBy: PICK_BY_OPTIONS,
       defaultPickBy: store.settings.defaultPickBy || 'added'
     });
   });
@@ -317,7 +318,7 @@ export async function createApp(options = {}) {
 
   route('GET', '/api/demo-preview', async (req, res, params, query) => {
     const settings = JSON.parse(JSON.stringify(store.settings.cover));
-    const numKeys = ['width', 'height', 'columns', 'maxItems', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
+    const numKeys = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
     const strKeys = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
     for (const k of numKeys) {
       const v = Number(query.get(k));
@@ -327,12 +328,11 @@ export async function createApp(options = {}) {
       if (query.get(k)) settings[k] = query.get(k);
     }
     if (query.get('showCount') === '0') settings.showCount = false;
-    const style = STYLES.some((s) => s.id === query.get('style')) ? query.get('style') : 'single';
     if (SIZE_PRESETS[query.get('size')]) {
       settings.width = SIZE_PRESETS[query.get('size')].width;
       settings.height = SIZE_PRESETS[query.get('size')].height;
     }
-    const count = Math.min(9, settings.maxItems || 9);
+    const count = 9;
     const posters = [];
     for (let i = 0; i < count; i += 1) {
       posters.push(await placeholderPoster(`MOVIE ${i + 1}`, i));
@@ -342,7 +342,7 @@ export async function createApp(options = {}) {
       subtitle: settings.showCount ? `共 ${count} 部作品` : '',
       posters,
       settings,
-      style
+      style: 'single'
     });
     sendBuffer(res, 200, png, 'image/png');
   });
@@ -387,7 +387,7 @@ export async function createApp(options = {}) {
       sendJson(res, 400, { error: e.message });
       return;
     }
-    const result = webhookService.handle(payload);
+    const result = await webhookService.handle(payload);
     sendJson(res, 200, result);
   });
 

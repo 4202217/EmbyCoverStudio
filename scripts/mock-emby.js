@@ -59,6 +59,17 @@ function itemsResponse(list) {
   return JSON.stringify({ Items: list, TotalRecordCount: list.length });
 }
 
+function ancestorsFor(id) {
+  const item = allItems().find((i) => i.id === id);
+  if (!item) return null;
+  const list = [];
+  const col = collections.find((c) => c.children.includes(id));
+  if (col) list.push({ Id: col.Id, Name: col.Name, Type: 'BoxSet' });
+  const lib = libraries.find((l) => l.ItemId === item.library);
+  if (lib) list.push({ Id: lib.ItemId, Name: lib.Name, Type: 'CollectionFolder' });
+  return list;
+}
+
 function send(res, status, body, contentType = 'application/json') {
   res.writeHead(status, { 'Content-Type': contentType, 'Access-Control-Allow-Origin': '*' });
   res.end(body);
@@ -145,6 +156,16 @@ export async function startMock({ port = 8199, host = '127.0.0.1' } = {}) {
     }
     if (req.method === 'GET' && (p === '/emby/Items' || p === '/emby/Users/u1/Items')) {
       handleItems(query, res);
+      return;
+    }
+    const ancestorsMatch = p.match(/^\/emby\/(?:Users\/[^/]+\/)?Items\/([^/]+)\/Ancestors$/);
+    if (req.method === 'GET' && ancestorsMatch) {
+      const list = ancestorsFor(ancestorsMatch[1]);
+      if (list === null) {
+        send(res, 404, JSON.stringify({ error: 'no item' }));
+        return;
+      }
+      send(res, 200, itemsResponse(list));
       return;
     }
     if (req.method === 'GET' && p === '/emby/Users/u1/Views') {
