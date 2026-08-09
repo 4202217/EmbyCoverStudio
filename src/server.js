@@ -158,8 +158,13 @@ export async function createApp(options = {}) {
       cronValid: true,
       nextRun: getNextRun(),
       webhookPending: webhookService.pending,
-      webhook: { url: webhookUrl(req) },
-      font: fontStatus(settings.coverByKind?.library || {}),
+      webhook: {
+        url: webhookUrl(req),
+        lastEvent: webhookService.last.event,
+        lastEventAt: webhookService.last.at,
+        test: webhookService.test
+      },
+      font: fontStatus(settings.coverByStyle?.['library-single'] || {}),
       sync: {
         status: s.status,
         running: s.running,
@@ -221,8 +226,9 @@ export async function createApp(options = {}) {
       styles: STYLES,
       sizes: Object.values(SIZE_PRESETS),
       defaults: DEFAULT_SIZE_BY_KIND,
-      defaultPickBy: store.settings.defaultPickByByKind?.library || 'added',
-      defaultPickByByKind: store.settings.defaultPickByByKind,
+      defaultPickBy: store.settings.defaultPickByByStyle?.['library-single'] || 'added',
+      defaultPickByByStyle: store.settings.defaultPickByByStyle,
+      coverByStyle: store.settings.coverByStyle,
       styleByKind: store.settings.styleByKind,
       sizeByKind: store.settings.sizeByKind
     });
@@ -367,7 +373,8 @@ export async function createApp(options = {}) {
   route('POST', '/api/sync', async (req, res) => {
     const body = await readJson(req);
     const onlyKind = body.onlyKind === 'library' || body.onlyKind === 'collection' ? body.onlyKind : null;
-    const result = await syncService.runSync({ force: Boolean(body.force), reason: '手动同步', onlyKind });
+    const onlyStyle = body.onlyStyle === 'single' || body.onlyStyle === 'wall3' ? body.onlyStyle : null;
+    const result = await syncService.runSync({ force: Boolean(body.force), reason: '手动同步', onlyKind, onlyStyle });
     sendJson(res, result.ok ? 200 : 400, result);
   });
 
@@ -399,7 +406,7 @@ export async function createApp(options = {}) {
   });
 
   route('GET', '/api/demo-preview', async (req, res, params, query) => {
-    const settings = JSON.parse(JSON.stringify(store.settings.coverByKind?.library || {}));
+    const settings = JSON.parse(JSON.stringify(store.settings.coverByStyle?.['library-single'] || {}));
     const numKeys = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
     const strKeys = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
     for (const k of numKeys) {
@@ -471,6 +478,10 @@ export async function createApp(options = {}) {
     }
     const result = await webhookService.handle(payload);
     sendJson(res, 200, result);
+  });
+
+  route('POST', '/api/webhook/test/arm', (req, res) => {
+    sendJson(res, 200, webhookService.armTest());
   });
 
   route('GET', '/healthz', (req, res) => {

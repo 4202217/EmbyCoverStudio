@@ -31,7 +31,13 @@ function effectivePickBy(target, settings) {
   if (target?.pickBy === 'manual') return 'manual';
   if (target?.pickBy === 'premiere') return 'premiere';
   if (target?.pickBy === 'added') return 'added';
-  return settings.defaultPickByByKind?.[target.kind] === 'premiere' ? 'premiere' : 'added';
+  return settings.defaultPickByByStyle?.[`${target.kind}-${effectiveStyleOf(target, settings)}`] === 'premiere' ? 'premiere' : 'added';
+}
+
+function effectiveStyleOf(target, settings) {
+  if (target.kind === 'collection') return 'single';
+  const def = settings.styleByKind?.library || 'single';
+  return isValidStyle(target.template) ? target.template : (isValidStyle(def) ? def : 'single');
 }
 
 function posterNeed(style) {
@@ -116,15 +122,15 @@ export function createSyncService(store) {
   async function collectPosters(target, client, settings, { pickBy = 'added', manualItemId = '', need = 1 } = {}) {
     // 元数据拉取上限提高，保证副标题数量统计完整（仅下载需要的海报图）
     const raw = await client.getCoverItems(target, 500);
-    let sorted = sortByPick(raw, pickBy);
+    // 总数始终按整个媒体库/合集的带封面条目统计，手动选择只影响选哪张海报
+    const withPrimaryAll = raw.filter((i) => i.hasPrimary);
+    let sorted;
     if (pickBy === 'manual' && manualItemId) {
-      const manual = raw.find((i) => i.id === String(manualItemId));
-      if (manual && manual.hasPrimary) {
-        sorted = [manual];
-      } else {
-        // 手动选择的影片已不存在或无封面，回退为最新入库
-        sorted = sortByPick(raw, 'added');
-      }
+      const manual = withPrimaryAll.find((i) => i.id === String(manualItemId));
+      // 手动选择的影片已不存在或无封面时，回退为最新入库
+      sorted = manual ? [manual] : sortByPick(withPrimaryAll, 'added');
+    } else {
+      sorted = sortByPick(raw, pickBy);
     }
     const posterW = Math.max(240, Math.round(settings.width * 0.4));
     const withPrimary = sorted.filter((i) => i.hasPrimary);
@@ -133,7 +139,7 @@ export function createSyncService(store) {
       const poster = await cachedPoster(client, item.id, posterW, item.imageTag);
       return poster ? { ...item, poster } : null;
     }, shouldStop);
-    return { posters: withPosters.filter(Boolean), total: withPrimary.length };
+    return { posters: withPosters.filter(Boolean), total: withPrimaryAll.length };
   }
 
   async function buildCover(target, posters, genSettings, style, totalCount = posters.length) {
@@ -162,7 +168,7 @@ export function createSyncService(store) {
       ? 'single'
       : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single'));
     const pickBy = effectivePickBy(target, settings);
-    const genSettings = { ...(settings.coverByKind?.[target.kind] || {}), width: size.width, height: size.height };
+    const genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${style}`] || {}), width: size.width, height: size.height };
     const settingsHash = sha1(JSON.stringify({ cover: genSettings, template: style, defaultPickBy: pickBy }));
     const { posters, total } = await collectPosters(target, client, genSettings, { pickBy, manualItemId: target.manualItemId, need: posterNeed(style) });
     const hash = sha1(posters.map((p) => `${p.id}:${p.imageTag}`).join('|'));
@@ -229,7 +235,7 @@ export function createSyncService(store) {
     }
   }
 
-  async function runSync({ force = false, reason = '手动', onlyIds = null, onlyKind = null, resume = false } = {}) {
+  async function runSync({ force = false, reason = '手动', onlyIds = null, onlyKind = null, onlyStyle = null, resume = false } = {}) {
     if (state.running) return { skipped: true, reason };
     state.running = true;
     state.pauseRequested = false;
@@ -275,6 +281,7 @@ export function createSyncService(store) {
       if (onlyIds) targets = targets.filter((t) => onlyIds.includes(t.id) && !t.locked);
       else targets = targets.filter((t) => !t.locked);
       if (onlyKind) targets = targets.filter((t) => t.kind === onlyKind);
+      if (onlyStyle) targets = targets.filter((t) => effectiveStyleOf(t, settings) === onlyStyle);
       if (!resume) state.queueTotal = targets.length;
       let updated = 0;
       let unchanged = 0;
@@ -312,9 +319,10 @@ export function createSyncService(store) {
       const trig = triggerOf(reason);
       const precise = Boolean(onlyIds) && trig === 'webhook';
       const kindLabel = onlyKind === 'library' ? '媒体库' : onlyKind === 'collection' ? '合集' : '';
+      const styleLabel = onlyStyle === 'wall3' ? '海报墙' : onlyStyle === 'single' ? '单图海报' : '';
       store.addTask(taskRecord({
-        name: onlyKind ? `按类型重新生成（${kindLabel} · ${targets.length} 项）` : (onlyIds ? (precise ? `精准更新（${targets.length} 项）` : `批量更新（${targets.length} 项）`) : `全量同步（${targets.length} 项）`),
-        type: onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync'),
+        name: onlyStyle ? `按配置重新生成（${kindLabel}·${styleLabel} · ${targets.length} 项）` : (onlyKind ? `按类型重新生成（${kindLabel} · ${targets.length} 项）` : (onlyIds ? (precise ? `精准更新（${targets.length} 项）` : `批量更新（${targets.length} 项）`) : `全量同步（${targets.length} 项）`)),
+        type: onlyStyle ? 'sync' : (onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync')),
         trigger: trig,
         status: state.status === 'done' ? 'success' : state.status,
         updated,
@@ -329,9 +337,10 @@ export function createSyncService(store) {
       const trig = triggerOf(reason);
       const precise = Boolean(onlyIds) && trig === 'webhook';
       const kindLabel = onlyKind === 'library' ? '媒体库' : onlyKind === 'collection' ? '合集' : '';
+      const styleLabel = onlyStyle === 'wall3' ? '海报墙' : onlyStyle === 'single' ? '单图海报' : '';
       store.addTask(taskRecord({
-        name: onlyKind ? `按类型重新生成（${kindLabel}）` : (onlyIds ? (precise ? `精准更新（${onlyIds.length} 项）` : `批量更新（${onlyIds.length} 项）`) : '全量同步'),
-        type: onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync'),
+        name: onlyStyle ? `按配置重新生成（${kindLabel}·${styleLabel}）` : (onlyKind ? `按类型重新生成（${kindLabel}）` : (onlyIds ? (precise ? `精准更新（${onlyIds.length} 项）` : `批量更新（${onlyIds.length} 项）`) : '全量同步')),
+        type: onlyStyle ? 'sync' : (onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync')),
         trigger: trig,
         status: 'failed',
         error: e.message
@@ -437,7 +446,7 @@ export function createSyncService(store) {
       ? 'single'
       : (isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single')));
     const pickBy = effectivePickBy(target, store.settings);
-    const genSettings = { ...(settings.coverByKind?.[target.kind] || {}), width: size.width, height: size.height };
+    const genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${style}`] || {}), width: size.width, height: size.height };
     if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {
       genSettings.backgroundMode = overrides.backgroundMode;
     }

@@ -5,6 +5,16 @@ export function createWebhookService(store, syncService) {
   let timer = null;
   let pendingIds = new Set();
   let pendingFull = false;
+  let lastEvent = '';
+  let lastEventAt = '';
+  let testArm = null;
+  let testResult = null;
+
+  function armTest() {
+    testArm = { at: new Date().toISOString() };
+    testResult = null;
+    return { ok: true };
+  }
 
   function schedule() {
     clearTimeout(timer);
@@ -53,6 +63,13 @@ export function createWebhookService(store, syncService) {
 
   async function handle(payload) {
     const event = String(payload?.Event || '').toLowerCase();
+    lastEvent = event || '(未知事件)';
+    lastEventAt = new Date().toISOString();
+    if (testArm) {
+      testResult = { event: lastEvent, at: lastEventAt };
+      testArm = null;
+      info(`已收到测试通知：${lastEvent}`);
+    }
     if (!isRelevantWebhookEvent(event)) return { ok: true, handled: false, event };
     const itemName = payload?.Item?.Name || payload?.Item?.Id || '';
     info(`收到 Emby 事件 ${event}（${itemName}），正在定位相关合集`);
@@ -73,8 +90,15 @@ export function createWebhookService(store, syncService) {
   return {
     handle,
     schedule,
+    armTest,
     get pending() {
       return Boolean(timer);
+    },
+    get last() {
+      return { event: lastEvent, at: lastEventAt };
+    },
+    get test() {
+      return { armed: Boolean(testArm), result: testResult };
     }
   };
 }

@@ -324,6 +324,7 @@ async function renderTargets() {
   try {
     const r = await api('/api/targets');
     state.targets = r.targets;
+    updateChipCounts();
     drawTargets();
   } catch (e) {
     $('#target-list').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
@@ -335,7 +336,7 @@ function configHtml(t) {
   const isLib = t.kind === 'library';
   const pend = state.pendingCfg && state.pendingCfg.id === t.id ? state.pendingCfg : null;
   const style = pend ? pend.style : (t.template || state.styles?.styleByKind?.[t.kind] || 'single');
-  const pick = pend ? pend.pickBy : (t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added');
+  const pick = pend ? pend.pickBy : (t.pickBy || targetDefaultPick(t, style));
   const manualName = pend ? pend.manualItemName : (t.manualItemName || '');
   const locked = Boolean(t.locked);
   // 样式：媒体库可选单图/海报墙，合集仅单图；顺序为样式在前、选图依据在后
@@ -371,20 +372,26 @@ function setPendingField(id, key, value) {
   const t = state.targets.find((x) => x.id === id);
   if (!t) return;
   const cur = state.pendingCfg && state.pendingCfg.id === id ? state.pendingCfg : null;
+  const style = key === 'style' ? value : (cur?.style || t.template || state.styles?.styleByKind?.[t.kind] || 'single');
   state.pendingCfg = {
     id,
-    style: key === 'style' ? value : (cur?.style || t.template || state.styles?.styleByKind?.[t.kind] || 'single'),
-    pickBy: key === 'pickBy' ? value : (cur?.pickBy || t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added'),
+    style,
+    pickBy: key === 'pickBy' ? value : (cur?.pickBy || t.pickBy || targetDefaultPick(t, style)),
     manualItemId: cur?.manualItemId || t.manualItemId || '',
     manualItemName: cur?.manualItemName || t.manualItemName || ''
   };
   drawTargets();
 }
 
+function targetDefaultPick(t, style) {
+  const s = style || (t.kind === 'collection' ? 'single' : (t.template || state.styles?.styleByKind?.library || 'single'));
+  return state.styles?.defaultPickByByStyle?.[`${t.kind}-${s}`] || 'added';
+}
+
 function hasCfgChanges(t, cur) {
   if (!cur) return false;
   const curStyle = t.template || state.styles?.styleByKind?.[t.kind] || 'single';
-  const curPick = t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added';
+  const curPick = t.pickBy || targetDefaultPick(t, curStyle);
   if (cur.style !== curStyle) return true;
   if (cur.pickBy !== curPick) return true;
   if (cur.pickBy === 'manual' && cur.manualItemId !== (t.manualItemId || '')) return true;
@@ -411,7 +418,7 @@ function drawTargets() {
     const thumb = t.coverUrl
       ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
       : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;font-size:22px;${thumbStyle}">🎬</div>`;
-    const pickBy = t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added';
+    const pickBy = t.pickBy || targetDefaultPick(t);
     const pickLabel = pickBy === 'premiere' ? '最新发行' : pickBy === 'manual' ? '手动选择' : '最新入库';
     const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
     const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount || 0} 部影片`;
@@ -464,7 +471,7 @@ function drawTargets() {
       if (!t) return;
       const cur = state.pendingCfg && state.pendingCfg.id === id ? state.pendingCfg : null;
       const style = cur?.style || t.template || state.styles?.styleByKind?.[t.kind] || 'single';
-      let pick = cur?.pickBy || t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added';
+      let pick = cur?.pickBy || t.pickBy || targetDefaultPick(t, style);
       if (style !== 'single') pick = 'added'; // 海报墙样式不支持手动选择
       const withLock = el.dataset.lock === '1';
       const body = { template: style, pickBy: pick, locked: withLock };
@@ -563,10 +570,27 @@ async function refreshTargets() {
   try {
     const r = await api('/api/targets');
     state.targets = r.targets;
+    updateChipCounts();
   } catch (e) {
     toast(e.message, 'err');
   }
   if ($('#target-list')) drawTargets();
+}
+
+function updateChipCounts() {
+  const ts = state.targets || [];
+  const counts = {
+    all: ts.length,
+    library: ts.filter((t) => t.kind === 'library').length,
+    collection: ts.filter((t) => t.kind === 'collection').length,
+    enabled: ts.filter((t) => !t.locked).length,
+    locked: ts.filter((t) => t.locked).length
+  };
+  const labels = { all: '全部', library: '媒体库', collection: '合集', enabled: '监控中', locked: '已锁定' };
+  document.querySelectorAll('#chips .chip').forEach((c) => {
+    const n = counts[c.dataset.f];
+    if (n !== undefined) c.textContent = `${labels[c.dataset.f] || ''} (${n})`;
+  });
 }
 
 function updateBatchUI() {
@@ -854,21 +878,26 @@ async function renderSettings() {
       fontFile: ''
     };
   }
-  // 媒体库、合集各自一套默认配置（样式/选图依据/字号/颜色/字体等）
-  state.cfgKind = 'library';
+  // 三套默认配置：媒体库·单图海报 / 媒体库·海报墙 / 合集·单图海报
+  state.cfgGroup = 'library-single';
   state.cfgDraft = {
-    library: {
-      style: s.styleByKind?.library || 'single',
-      pickBy: s.defaultPickByByKind?.library || 'added',
-      cover: { ...cfgDefaultCover('library'), ...(s.coverByKind?.library || {}) }
-    },
-    collection: {
+    'library-single': {
       style: 'single',
-      pickBy: s.defaultPickByByKind?.collection || 'added',
-      cover: { ...cfgDefaultCover('collection'), ...(s.coverByKind?.collection || {}) }
+      pickBy: s.defaultPickByByStyle?.['library-single'] || 'added',
+      cover: { ...cfgDefaultCover('library'), ...(s.coverByStyle?.['library-single'] || {}) }
+    },
+    'library-wall3': {
+      style: 'wall3',
+      pickBy: s.defaultPickByByStyle?.['library-wall3'] || 'added',
+      cover: { ...cfgDefaultCover('library'), ...(s.coverByStyle?.['library-wall3'] || {}) }
+    },
+    'collection-single': {
+      style: 'single',
+      pickBy: s.defaultPickByByStyle?.['collection-single'] || 'added',
+      cover: { ...cfgDefaultCover('collection'), ...(s.coverByStyle?.['collection-single'] || {}) }
     }
   };
-  const c = state.cfgDraft.library.cover;
+  const c = state.cfgDraft['library-single'].cover;
 
   main.innerHTML = `
     <div class="page-title">设置</div>
@@ -924,10 +953,11 @@ async function renderSettings() {
         <div class="auto-row"><span class="lab">下次定时</span><span id="set-nextRun">—</span></div>
         <div class="auto-row"><span class="lab">最近错误</span><span id="set-lastError">—</span></div>
         <div class="row mt">
-          <button class="btn" id="btn-test-webhook">发送测试通知</button>
+          <button class="btn" id="btn-test-webhook">等待接收测试通知</button>
           <span class="status-line" id="test-webhook-result"></span>
         </div>
-        <p class="hint" style="margin-top:8px">「发送测试通知」会模拟 Emby 推送一个事件到上面的 Webhook 地址，可验证自动更新链路是否正常，并会安排一次自动同步。</p>
+        <div class="muted" style="font-size:12px;margin-top:6px" id="webhook-last">最近收到：—</div>
+        <p class="hint" style="margin-top:8px">在 Emby 官方 Webhooks 插件里点击该 webhook 的「测试通知」按钮，本页面会检测是否真正收到（60 秒超时）。</p>
       </div>
     </div>
 
@@ -935,30 +965,24 @@ async function renderSettings() {
       <h3>封面配置</h3>
       <div class="cfg-wrap" style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start">
         <div class="cfg-left" style="flex:1;min-width:280px">
-          <div class="seg" id="cfg-kind">
-            <button class="seg-btn active" data-kind="library">媒体库</button>
-            <button class="seg-btn" data-kind="collection">合集</button>
-          </div>
-          <div class="row" id="cfg-lib-fields" style="gap:22px;flex-wrap:wrap;align-items:flex-start;margin-top:10px">
-            <label class="field" style="max-width:260px"><span class="lab">媒体库默认样式</span>
-              <select id="set-lib-style">
+          <div class="row" style="gap:14px;flex-wrap:wrap;align-items:center">
+            <div class="seg" id="cfg-kind">
+              <button class="seg-btn active" data-group="library-single">媒体库·单图海报</button>
+              <button class="seg-btn" data-group="library-wall3">媒体库·海报墙</button>
+              <button class="seg-btn" data-group="collection-single">合集·单图海报</button>
+            </div>
+            <label class="field" style="max-width:260px"><span class="lab">未单独配置的媒体库默认样式</span>
+              <select id="set-lib-default-style">
                 <option value="single" ${(s.styleByKind?.library || 'single') === 'single' ? 'selected' : ''}>单图海报</option>
                 <option value="wall3" ${s.styleByKind?.library === 'wall3' ? 'selected' : ''}>海报墙</option>
               </select>
-              <span class="hint">尺寸固定为 16:9 缩略图</span>
-            </label>
-          </div>
-          <div class="row" id="cfg-col-fields" style="display:none;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-top:10px">
-            <label class="field" style="max-width:260px"><span class="lab">合集默认样式</span>
-              <select disabled><option selected>单图海报（合集固定）</option></select>
-              <span class="hint">尺寸固定为 2:3 海报</span>
             </label>
           </div>
           <div class="row" style="gap:22px;align-items:flex-start;margin-top:10px">
             <label class="field" style="max-width:320px"><span class="lab">选图依据（单图海报）</span>
               <select id="set-cfg-pickBy">
-                <option value="added" ${state.cfgDraft.library.pickBy === 'premiere' ? '' : 'selected'}>加入时间（最新入库）</option>
-                <option value="premiere" ${state.cfgDraft.library.pickBy === 'premiere' ? 'selected' : ''}>发行时间（最新发行）</option>
+                <option value="added" ${state.cfgDraft['library-single'].pickBy === 'premiere' ? '' : 'selected'}>加入时间（最新入库）</option>
+                <option value="premiere" ${state.cfgDraft['library-single'].pickBy === 'premiere' ? 'selected' : ''}>发行时间（最新发行）</option>
               </select>
               <span class="hint">单图海报样式按此依据挑选要展示的海报</span>
             </label>
@@ -1001,10 +1025,10 @@ async function renderSettings() {
       </div>
       <div class="row mt" style="gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn" id="btn-save-cover">保存封面设置</button>
-        <button class="btn primary" id="btn-save-regen">保存并重新生成当前类型封面</button>
+        <button class="btn primary" id="btn-save-regen">保存并重新生成当前配置封面</button>
         <span class="status-line" id="save-cover-result"></span>
       </div>
-      <p class="muted" style="font-size:12px;margin-top:8px">颜色、字体等为两类通用设置；「保存并重新生成当前类型封面」只重新生成当前所选类型（媒体库/合集）中未锁定的封面。</p>
+      <p class="muted" style="font-size:12px;margin-top:8px">媒体库·单图海报、媒体库·海报墙、合集·单图海报三套配置互相独立；「保存并重新生成当前配置封面」只重新生成使用当前配置且未锁定的封面。</p>
     </div>
 
     <div class="panel">
@@ -1021,9 +1045,9 @@ async function renderSettings() {
     `;
 
   function saveDraftFromDom() {
-    const k = state.cfgKind;
-    state.cfgDraft[k] = {
-      style: k === 'library' ? ($('#set-lib-style')?.value || 'single') : 'single',
+    const g = state.cfgGroup;
+    state.cfgDraft[g] = {
+      style: g.endsWith('-wall3') ? 'wall3' : 'single',
       pickBy: $('#set-cfg-pickBy')?.value || 'added',
       cover: {
         titleSize: Number($('#set-titleSize').value),
@@ -1041,10 +1065,9 @@ async function renderSettings() {
     };
   }
 
-  function applyDraftToDom(k) {
-    const d = state.cfgDraft[k];
-    if (!$('#set-lib-style')) return;
-    $('#set-lib-style').value = d.style;
+  function applyDraftToDom(g) {
+    const d = state.cfgDraft[g];
+    if (!$('#set-cfg-pickBy')) return;
     $('#set-cfg-pickBy').value = d.pickBy;
     $('#set-titleSize').value = d.cover.titleSize;
     $('#set-subtitleSize').value = d.cover.subtitleSize;
@@ -1057,26 +1080,25 @@ async function renderSettings() {
     $('#set-fontFile').value = d.cover.fontFile || '';
     $('#set-backgroundMode').value = d.cover.backgroundMode || 'gradient';
     $('#set-showCount').checked = d.cover.showCount !== false;
-    $('#cfg-lib-fields').style.display = k === 'library' ? '' : 'none';
-    $('#cfg-col-fields').style.display = k === 'collection' ? '' : 'none';
     document.querySelectorAll('#cfg-kind .seg-btn').forEach((x) => {
-      x.classList.toggle('active', x.dataset.kind === k);
+      x.classList.toggle('active', x.dataset.group === g);
     });
   }
 
   document.querySelectorAll('#cfg-kind .seg-btn').forEach((b) => {
     b.onclick = () => {
       saveDraftFromDom();
-      state.cfgKind = b.dataset.kind;
-      applyDraftToDom(state.cfgKind);
+      state.cfgGroup = b.dataset.group;
+      applyDraftToDom(state.cfgGroup);
       refreshCfgPreview();
     };
   });
 
   let cfgPreviewTimer = null;
   function refreshCfgPreview() {
-    const kind = state.cfgKind || 'library';
-    const style = kind === 'library' ? ($('#set-lib-style')?.value || 'single') : 'single';
+    const group = state.cfgGroup || 'library-single';
+    const kind = group.startsWith('library') ? 'library' : 'collection';
+    const style = group.endsWith('-wall3') ? 'wall3' : 'single';
     const size = kind === 'library' ? 'thumb' : 'poster'; // 尺寸强制：媒体库 16:9，合集 2:3
     const q = new URLSearchParams({
       style,
@@ -1111,7 +1133,7 @@ async function renderSettings() {
       pre.src = url;
     }
   }
-  ['#set-lib-style', '#set-cfg-pickBy', '#set-backgroundMode', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor', '#set-fontFamily', '#set-fontFile'].forEach((sel) => {
+  ['#set-cfg-pickBy', '#set-backgroundMode', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor', '#set-fontFamily', '#set-fontFile'].forEach((sel) => {
     const el = document.querySelector(sel);
     if (!el) return;
     el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
@@ -1165,36 +1187,55 @@ async function renderSettings() {
     }
   }
 
+  let webhookTestTimer = null;
+  function updateWebhookLast(wh) {
+    const el = document.getElementById('webhook-last');
+    if (!el) return;
+    el.textContent = wh?.lastEventAt
+      ? `最近收到：${wh.lastEvent || '(未知事件)'} · ${fmtTime(wh.lastEventAt)}`
+      : '最近收到：—';
+  }
+  updateWebhookLast(state.status?.webhook);
+
   $('#btn-test-webhook').onclick = async () => {
     const btn = $('#btn-test-webhook');
     const el = $('#test-webhook-result');
-    btn.disabled = true;
-    el.className = 'status-line';
-    el.textContent = '正在发送测试通知…';
+    clearInterval(webhookTestTimer);
+    webhookTestTimer = null;
     try {
-      const urlInfo = await api('/api/webhook/url');
-      const payload = {
-        Event: 'Library.New',
-        Item: { Id: 'emby-cover-studio-test', Name: '测试通知', Type: 'CollectionFolder' }
-      };
-      const res = await fetch(urlInfo.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      if (!data.handled) throw new Error('事件未被识别');
-      el.className = 'status-line ok';
-      el.textContent = '测试通知已送达 ✅ 已安排自动同步';
-      toast('测试通知已送达，自动同步即将执行', 'ok');
-      loadStatus().then(updateAutoStatus);
+      await api('/api/webhook/test/arm', { method: 'POST', body: {} });
     } catch (e) {
       el.className = 'status-line err';
-      el.textContent = `发送失败：${e.message}`;
-    } finally {
-      btn.disabled = false;
+      el.textContent = `启动失败：${e.message}`;
+      return;
     }
+    btn.disabled = true;
+    el.className = 'status-line';
+    el.textContent = '等待接收中…请到 Emby Webhooks 插件点击「测试通知」（60 秒超时）';
+    let waited = 0;
+    webhookTestTimer = setInterval(async () => {
+      waited += 2000;
+      const st = await loadStatus().catch(() => null);
+      const t = st?.webhook?.test;
+      if (t && !t.armed && t.result) {
+        clearInterval(webhookTestTimer);
+        webhookTestTimer = null;
+        btn.disabled = false;
+        el.className = 'status-line ok';
+        el.textContent = `已收到测试通知 ✅ 事件：${t.result.event} · ${fmtTime(t.result.at)}`;
+        updateWebhookLast(st.webhook);
+        toast('已收到 Emby 测试通知 ✅', 'ok');
+        return;
+      }
+      if (waited >= 60000) {
+        clearInterval(webhookTestTimer);
+        webhookTestTimer = null;
+        btn.disabled = false;
+        el.className = 'status-line err';
+        el.textContent = '60 秒内未收到，请确认插件已配置此地址并点击了「测试通知」';
+      }
+    }, 2000);
+    state.timers.push(webhookTestTimer);
   };
 
   async function refreshAutoStatus() {
@@ -1216,11 +1257,16 @@ async function renderSettings() {
   function collectCoverBody() {
     saveDraftFromDom();
     return {
-      styleByKind: { library: state.cfgDraft.library.style, collection: 'single' },
-      defaultPickByByKind: { library: state.cfgDraft.library.pickBy, collection: state.cfgDraft.collection.pickBy },
-      coverByKind: {
-        library: { ...state.cfgDraft.library.cover, width: 1600, height: 900 },
-        collection: { ...state.cfgDraft.collection.cover, width: 1000, height: 1500 }
+      styleByKind: { library: $('#set-lib-default-style').value, collection: 'single' },
+      defaultPickByByStyle: {
+        'library-single': state.cfgDraft['library-single'].pickBy,
+        'library-wall3': state.cfgDraft['library-wall3'].pickBy,
+        'collection-single': state.cfgDraft['collection-single'].pickBy
+      },
+      coverByStyle: {
+        'library-single': { ...state.cfgDraft['library-single'].cover, width: 1600, height: 900 },
+        'library-wall3': { ...state.cfgDraft['library-wall3'].cover, width: 1600, height: 900 },
+        'collection-single': { ...state.cfgDraft['collection-single'].cover, width: 1000, height: 1500 }
       }
     };
   }
@@ -1281,15 +1327,18 @@ async function renderSettings() {
     btn.innerHTML = '<span class="spinner"></span> 保存中…';
     try {
       await saveSettings();
-      const kind = state.cfgKind || 'library';
-      toast(`设置已保存，开始重新生成${kind === 'library' ? '媒体库' : '合集'}封面…`, 'ok');
+      const group = state.cfgGroup || 'library-single';
+      const kind = group.startsWith('library') ? 'library' : 'collection';
+      const style = group.endsWith('-wall3') ? 'wall3' : 'single';
+      const label = `${kind === 'library' ? '媒体库' : '合集'}·${style === 'wall3' ? '海报墙' : '单图海报'}`;
+      toast(`设置已保存，开始重新生成${label}封面…`, 'ok');
       showSyncProgress();
-      api('/api/sync', { method: 'POST', body: { force: true, onlyKind: kind } }).then(() => {}).catch(() => {});
+      api('/api/sync', { method: 'POST', body: { force: true, onlyKind: kind, onlyStyle: style } }).then(() => {}).catch(() => {});
     } catch (e) {
       toast(`保存失败：${e.message}`, 'err');
     } finally {
       btn.disabled = false;
-      btn.textContent = '保存并重新生成当前类型封面';
+      btn.textContent = '保存并重新生成当前配置封面';
     }
   };
 

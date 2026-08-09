@@ -16,13 +16,17 @@ export function defaultSettings() {
     accessToken: '',
     defaultStyle: 'single',
     styleByKind: { library: 'single', collection: 'single' },
-    defaultPickByByKind: { library: 'added', collection: 'added' },
+    defaultPickByByStyle: {
+      'library-single': 'added',
+      'library-wall3': 'added',
+      'collection-single': 'added'
+    },
     cron: '0 */6 * * *',
     autoEnableNew: true,
     syncOnStart: true,
     webhookDebounceMs: 20000,
-    coverByKind: {
-      library: {
+    coverByStyle: {
+      'library-single': {
         width: 1600,
         height: 900,
         titleSize: 84,
@@ -39,7 +43,24 @@ export function defaultSettings() {
         fontFamily: 'Noto Sans CJK SC',
         fontFile: ''
       },
-      collection: {
+      'library-wall3': {
+        width: 1600,
+        height: 900,
+        titleSize: 84,
+        subtitleSize: 36,
+        titleColor: '#ffffff',
+        subtitleColor: '#c9d6f2',
+        bgTop: '#17233d',
+        bgBottom: '#0a0f1c',
+        backgroundMode: 'gradient',
+        accent: '#00a4dc',
+        radius: 20,
+        cellBorder: 2,
+        showCount: true,
+        fontFamily: 'Noto Sans CJK SC',
+        fontFile: ''
+      },
+      'collection-single': {
         width: 1000,
         height: 1500,
         titleSize: 84,
@@ -71,9 +92,9 @@ function clampInt(v, min, max, fallback) {
 }
 
 function sanitizeCover(patch) {
-  const cover = { ...defaultSettings().coverByKind.library, ...(patch || {}) };
+  const cover = { ...defaultSettings().coverByStyle['library-single'], ...(patch || {}) };
   for (const k of COVER_NUM_FIELDS) {
-    if (patch && k in patch) cover[k] = clampInt(patch[k], 1, 8192, defaultSettings().coverByKind.library[k]);
+    if (patch && k in patch) cover[k] = clampInt(patch[k], 1, 8192, defaultSettings().coverByStyle['library-single'][k]);
   }
   for (const k of COVER_BOOL_FIELDS) {
     if (patch && k in patch) cover[k] = !!patch[k];
@@ -92,15 +113,26 @@ function sanitizeSettings(patch) {
   if ('accessToken' in patch) out.accessToken = String(patch.accessToken || '').trim();
   if ('defaultStyle' in patch) out.defaultStyle = String(patch.defaultStyle || 'single');
   if ('defaultPickBy' in patch) {
-    // 兼容旧字段：同时写入两种类型的默认值
+    // 兼容旧字段：同时写入三套默认值
     const d = patch.defaultPickBy === 'premiere' ? 'premiere' : 'added';
-    out.defaultPickByByKind = { library: d, collection: d };
+    out.defaultPickByByStyle = { 'library-single': d, 'library-wall3': d, 'collection-single': d };
   }
   if ('defaultPickByByKind' in patch) {
     const s = patch.defaultPickByByKind || {};
-    out.defaultPickByByKind = {
-      library: s.library === 'premiere' ? 'premiere' : 'added',
-      collection: s.collection === 'premiere' ? 'premiere' : 'added'
+    const lib = s.library === 'premiere' ? 'premiere' : 'added';
+    const col = s.collection === 'premiere' ? 'premiere' : 'added';
+    out.defaultPickByByStyle = {
+      'library-single': lib,
+      'library-wall3': lib,
+      'collection-single': col
+    };
+  }
+  if ('defaultPickByByStyle' in patch) {
+    const s = patch.defaultPickByByStyle || {};
+    out.defaultPickByByStyle = {
+      'library-single': s['library-single'] === 'premiere' ? 'premiere' : 'added',
+      'library-wall3': s['library-wall3'] === 'premiere' ? 'premiere' : 'added',
+      'collection-single': s['collection-single'] === 'premiere' ? 'premiere' : 'added'
     };
   }
   if ('styleByKind' in patch) {
@@ -111,14 +143,24 @@ function sanitizeSettings(patch) {
     };
   }
   if ('cover' in patch) {
-    // 兼容旧字段：同时应用到两种类型
-    out.coverByKind = { library: sanitizeCover(patch.cover), collection: sanitizeCover(patch.cover) };
+    // 兼容旧字段：同时应用到三套配置
+    const c = sanitizeCover(patch.cover);
+    out.coverByStyle = { 'library-single': c, 'library-wall3': c, 'collection-single': c };
   }
   if ('coverByKind' in patch) {
     const c = patch.coverByKind || {};
-    out.coverByKind = {
-      library: sanitizeCover(c.library),
-      collection: sanitizeCover(c.collection)
+    out.coverByStyle = {
+      'library-single': sanitizeCover(c.library),
+      'library-wall3': sanitizeCover(c.library),
+      'collection-single': sanitizeCover(c.collection)
+    };
+  }
+  if ('coverByStyle' in patch) {
+    const c = patch.coverByStyle || {};
+    out.coverByStyle = {
+      'library-single': sanitizeCover(c['library-single']),
+      'library-wall3': sanitizeCover(c['library-wall3']),
+      'collection-single': sanitizeCover(c['collection-single'])
     };
   }
   if ('cron' in patch) out.cron = String(patch.cron || '0 */6 * * *').trim();
@@ -178,6 +220,26 @@ export class Store {
       const d = st.defaultPickBy === 'premiere' ? 'premiere' : 'added';
       st.defaultPickByByKind = { library: d, collection: d };
       delete st.defaultPickBy;
+    }
+    if (st.defaultPickByByKind !== undefined) {
+      const lib = st.defaultPickByByKind.library === 'premiere' ? 'premiere' : 'added';
+      const col = st.defaultPickByByKind.collection === 'premiere' ? 'premiere' : 'added';
+      st.defaultPickByByStyle = {
+        'library-single': lib,
+        'library-wall3': lib,
+        'collection-single': col
+      };
+      delete st.defaultPickByByKind;
+    }
+    if (st.coverByKind !== undefined) {
+      const lib = st.coverByKind.library || {};
+      const col = st.coverByKind.collection || {};
+      st.coverByStyle = {
+        'library-single': { ...(st.coverByStyle?.['library-single'] || {}), ...lib, width: 1600, height: 900 },
+        'library-wall3': { ...(st.coverByStyle?.['library-wall3'] || {}), ...lib, width: 1600, height: 900 },
+        'collection-single': { ...(st.coverByStyle?.['collection-single'] || {}), ...col, width: 1000, height: 1500 }
+      };
+      delete st.coverByKind;
     }
     // 迁移：只保留单图/极简两种样式
     if (!isValidStyle(this.data.settings.defaultStyle)) this.data.settings.defaultStyle = 'single';
