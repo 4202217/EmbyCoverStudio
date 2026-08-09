@@ -858,6 +858,13 @@ async function renderSettings() {
     return;
   }
   state.settings = s;
+  if (!state.targets || !state.targets.length) {
+    try {
+      state.targets = (await api('/api/targets')).targets;
+    } catch {
+      state.targets = [];
+    }
+  }
 
   function cfgDefaultCover(kind) {
     return {
@@ -971,7 +978,7 @@ async function renderSettings() {
               <button class="seg-btn" data-group="library-wall3">媒体库·海报墙</button>
               <button class="seg-btn" data-group="collection-single">合集·单图海报</button>
             </div>
-            <label class="field" style="max-width:260px"><span class="lab">未单独配置的媒体库默认样式</span>
+            <label class="field" id="cfg-lib-default-field" style="max-width:260px"><span class="lab">未单独配置的媒体库默认样式</span>
               <select id="set-lib-default-style">
                 <option value="single" ${(s.styleByKind?.library || 'single') === 'single' ? 'selected' : ''}>单图海报</option>
                 <option value="wall3" ${s.styleByKind?.library === 'wall3' ? 'selected' : ''}>海报墙</option>
@@ -999,6 +1006,12 @@ async function renderSettings() {
         </div>
         <div class="cfg-right" style="width:360px;flex-shrink:0">
           <div class="lab">实时预览（当前所选类型）</div>
+          <label class="field" style="margin-top:6px"><span class="lab">预览数据来源</span>
+            <select id="cfg-preview-source">
+              <option value="">占位图</option>
+            </select>
+            <span class="hint">选择后使用当前类型下的真实数据预览</span>
+          </label>
           <div id="cfg-preview-wrap" style="position:relative;display:inline-block;max-width:100%">
             <img id="cfg-preview" alt="封面预览" style="width:360px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--panel-2);display:block">
             <div id="cfg-preview-loading" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(10,15,28,0.55);border-radius:10px;color:#fff;font-size:13px">生成中…</div>
@@ -1006,9 +1019,11 @@ async function renderSettings() {
         </div>
       </div>
       <div class="cfg-below mt">
-        <div class="grid-4">
+        <div class="grid-2">
           <label class="field"><span class="lab">标题字号</span><input type="number" id="set-titleSize" value="${c.titleSize}" min="18" max="480"></label>
           <label class="field"><span class="lab">副标题字号</span><input type="number" id="set-subtitleSize" value="${c.subtitleSize}" min="12" max="240"></label>
+        </div>
+        <div class="grid-2 mt" id="cfg-bg-gradient-fields">
           <label class="field"><span class="lab">背景顶部</span><input type="color" id="set-bgTop" value="${c.bgTop}"></label>
           <label class="field"><span class="lab">背景底部</span><input type="color" id="set-bgBottom" value="${c.bgBottom}"></label>
         </div>
@@ -1080,9 +1095,24 @@ async function renderSettings() {
     $('#set-fontFile').value = d.cover.fontFile || '';
     $('#set-backgroundMode').value = d.cover.backgroundMode || 'gradient';
     $('#set-showCount').checked = d.cover.showCount !== false;
+    syncBgFields();
+    const dsf = $('#cfg-lib-default-field');
+    if (dsf) dsf.style.display = g.startsWith('library') ? '' : 'none';
+    updatePreviewSourceOptions(g.startsWith('library') ? 'library' : 'collection');
     document.querySelectorAll('#cfg-kind .seg-btn').forEach((x) => {
       x.classList.toggle('active', x.dataset.group === g);
     });
+  }
+
+  function updatePreviewSourceOptions(kind) {
+    const sel = $('#cfg-preview-source');
+    if (!sel) return;
+    const prev = sel.value;
+    const list = (state.targets || [])
+      .filter((t) => !t.missing && t.kind === kind)
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+    sel.innerHTML = '<option value="">占位图</option>' + list.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+    sel.value = prev && list.some((t) => t.id === prev) ? prev : '';
   }
 
   document.querySelectorAll('#cfg-kind .seg-btn').forEach((b) => {
@@ -1094,6 +1124,8 @@ async function renderSettings() {
     };
   });
 
+  applyDraftToDom(state.cfgGroup);
+
   let cfgPreviewTimer = null;
   function refreshCfgPreview() {
     const group = state.cfgGroup || 'library-single';
@@ -1104,7 +1136,7 @@ async function renderSettings() {
       style,
       size,
       backgroundMode: $('#set-backgroundMode').value,
-      title: kind === 'library' ? '我的媒体库' : '我的电影合集',
+      title: kind === 'library' ? '媒体库' : '合集',
       showCount: $('#set-showCount').checked ? '1' : '0',
       titleSize: $('#set-titleSize').value,
       subtitleSize: $('#set-subtitleSize').value,
@@ -1116,6 +1148,11 @@ async function renderSettings() {
       fontFamily: $('#set-fontFamily').value.trim(),
       fontFile: $('#set-fontFile').value.trim()
     });
+    const source = $('#cfg-preview-source')?.value || '';
+    if (source) {
+      q.set('targetId', source);
+      q.set('pickBy', $('#set-cfg-pickBy')?.value || 'added');
+    }
     const img = $('#cfg-preview');
     if (img) {
       const loading = $('#cfg-preview-loading');
@@ -1133,7 +1170,7 @@ async function renderSettings() {
       pre.src = url;
     }
   }
-  ['#set-cfg-pickBy', '#set-backgroundMode', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor', '#set-fontFamily', '#set-fontFile'].forEach((sel) => {
+  ['#set-cfg-pickBy', '#cfg-preview-source', '#set-backgroundMode', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor', '#set-fontFamily', '#set-fontFile'].forEach((sel) => {
     const el = document.querySelector(sel);
     if (!el) return;
     el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
@@ -1248,8 +1285,8 @@ async function renderSettings() {
 
   function syncBgFields() {
     const poster = $('#set-backgroundMode').value === 'poster';
-    $('#set-bgTop').disabled = poster;
-    $('#set-bgBottom').disabled = poster;
+    const wrap = $('#cfg-bg-gradient-fields');
+    if (wrap) wrap.style.display = poster ? 'none' : '';
   }
   $('#set-backgroundMode').onchange = syncBgFields;
   syncBgFields();

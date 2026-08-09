@@ -406,34 +406,50 @@ export async function createApp(options = {}) {
   });
 
   route('GET', '/api/demo-preview', async (req, res, params, query) => {
-    const settings = JSON.parse(JSON.stringify(store.settings.coverByStyle?.['library-single'] || {}));
-    const numKeys = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
-    const strKeys = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
-    for (const k of numKeys) {
-      const v = Number(query.get(k));
-      if (Number.isFinite(v) && v > 0) settings[k] = v;
+    try {
+      const settings = JSON.parse(JSON.stringify(store.settings.coverByStyle?.['library-single'] || {}));
+      const numKeys = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
+      const strKeys = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
+      for (const k of numKeys) {
+        const v = Number(query.get(k));
+        if (Number.isFinite(v) && v > 0) settings[k] = v;
+      }
+      for (const k of strKeys) {
+        if (query.get(k)) settings[k] = query.get(k);
+      }
+      if (query.get('showCount') === '0') settings.showCount = false;
+      if (SIZE_PRESETS[query.get('size')]) {
+        settings.width = SIZE_PRESETS[query.get('size')].width;
+        settings.height = SIZE_PRESETS[query.get('size')].height;
+      }
+      const style = STYLES.some((s) => s.id === query.get('style')) ? query.get('style') : 'single';
+      const targetId = String(query.get('targetId') || '');
+      if (targetId) {
+        // 使用真实媒体库/合集的数据作为预览来源
+        const png = await syncService.previewWithSettings(targetId, {
+          style,
+          cover: settings,
+          pickBy: query.get('pickBy') === 'premiere' ? 'premiere' : 'added'
+        });
+        sendBuffer(res, 200, png, 'image/png');
+        return;
+      }
+      const count = 9;
+      const posters = [];
+      for (let i = 0; i < count; i += 1) {
+        posters.push(await placeholderPoster(`MOVIE ${i + 1}`, i));
+      }
+      const png = await generateCover({
+        title: query.get('title') || '我的电影合集',
+        subtitle: settings.showCount ? `共 ${count} 部作品` : '',
+        posters,
+        settings,
+        style
+      });
+      sendBuffer(res, 200, png, 'image/png');
+    } catch (e) {
+      sendJson(res, 400, { error: e.message });
     }
-    for (const k of strKeys) {
-      if (query.get(k)) settings[k] = query.get(k);
-    }
-    if (query.get('showCount') === '0') settings.showCount = false;
-    if (SIZE_PRESETS[query.get('size')]) {
-      settings.width = SIZE_PRESETS[query.get('size')].width;
-      settings.height = SIZE_PRESETS[query.get('size')].height;
-    }
-    const count = 9;
-    const posters = [];
-    for (let i = 0; i < count; i += 1) {
-      posters.push(await placeholderPoster(`MOVIE ${i + 1}`, i));
-    }
-    const png = await generateCover({
-      title: query.get('title') || '我的电影合集',
-      subtitle: settings.showCount ? `共 ${count} 部作品` : '',
-      posters,
-      settings,
-      style: STYLES.some((s) => s.id === query.get('style')) ? query.get('style') : 'single'
-    });
-    sendBuffer(res, 200, png, 'image/png');
   });
 
   route('GET', '/api/covers/:file', (req, res, params) => {

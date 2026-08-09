@@ -455,5 +455,22 @@ export function createSyncService(store) {
     return buildCover(target, posters, genSettings, style, total);
   }
 
-  return { state, runSync, syncById, previewById, requestPause, requestCancel, resume };
+  // 用指定配置（样式/选图依据/封面元素设置）渲染某个真实媒体库或合集的预览
+  async function previewWithSettings(id, { style = 'single', cover = {}, pickBy = 'added' } = {}) {
+    const target = store.getTarget(id);
+    if (!target) throw new Error('目标不存在');
+    const client = await getClient();
+    if (!client.configured) throw new Error('未配置 Emby 服务器地址或 API 密钥');
+    const size = resolveSize(target, store.settings);
+    const genSettings = { ...cover, width: size.width, height: size.height };
+    const { posters, total } = await collectPosters(target, client, genSettings, {
+      pickBy: pickBy === 'premiere' ? 'premiere' : 'added',
+      manualItemId: target.manualItemId,
+      need: posterNeed(style)
+    });
+    if (!posters.length) throw new Error('未找到任何带封面的影片');
+    return buildCover(target, posters, genSettings, style, total);
+  }
+
+  return { state, runSync, syncById, previewById, previewWithSettings, requestPause, requestCancel, resume };
 }
