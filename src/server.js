@@ -159,7 +159,7 @@ export async function createApp(options = {}) {
       nextRun: getNextRun(),
       webhookPending: webhookService.pending,
       webhook: { url: webhookUrl(req) },
-      font: fontStatus(settings.cover),
+      font: fontStatus(settings.coverByKind?.library || {}),
       sync: {
         status: s.status,
         running: s.running,
@@ -221,7 +221,8 @@ export async function createApp(options = {}) {
       styles: STYLES,
       sizes: Object.values(SIZE_PRESETS),
       defaults: DEFAULT_SIZE_BY_KIND,
-      defaultPickBy: store.settings.defaultPickBy || 'added',
+      defaultPickBy: store.settings.defaultPickByByKind?.library || 'added',
+      defaultPickByByKind: store.settings.defaultPickByByKind,
       styleByKind: store.settings.styleByKind,
       sizeByKind: store.settings.sizeByKind
     });
@@ -271,6 +272,11 @@ export async function createApp(options = {}) {
     } else if (action === 'pickBy') {
       const pick = body.value === 'premiere' ? 'premiere' : 'added';
       for (const id of unlocked) store.updateTarget(id, { pickBy: pick });
+    } else if (action === 'reset') {
+      for (const id of unlocked) {
+        store.updateTarget(id, { template: '', pickBy: '', manualItemId: '', manualItemName: '', configured: false });
+      }
+      syncService.runSync({ reason: '恢复默认配置', onlyIds: unlocked, force: true }).catch(() => {});
     } else if (action === 'generate') {
       syncService.runSync({ reason: '批量更新', onlyIds: unlocked, force: true }).catch(() => {});
     } else {
@@ -293,17 +299,22 @@ export async function createApp(options = {}) {
       const v = String(body.template || 'single');
       // 合集仅支持单图海报
       patch.template = target.kind === 'collection' ? 'single' : (isValidStyle(v) ? v : 'single');
+      patch.configured = true;
     }
     if ('titleOverride' in body) patch.titleOverride = String(body.titleOverride || '').trim();
     if ('pickBy' in body) {
       const v = String(body.pickBy || '');
       patch.pickBy = ['added', 'premiere', 'manual'].includes(v) ? v : 'added';
+      patch.configured = true;
       if (patch.pickBy !== 'manual') {
         patch.manualItemId = '';
         patch.manualItemName = '';
       }
     }
-    if ('manualItemId' in body) patch.manualItemId = String(body.manualItemId || '').trim();
+    if ('manualItemId' in body) {
+      patch.manualItemId = String(body.manualItemId || '').trim();
+      patch.configured = true;
+    }
     if ('manualItemName' in body) patch.manualItemName = String(body.manualItemName || '').trim();
     if ('locked' in body) {
       patch.locked = Boolean(body.locked);
@@ -388,7 +399,7 @@ export async function createApp(options = {}) {
   });
 
   route('GET', '/api/demo-preview', async (req, res, params, query) => {
-    const settings = JSON.parse(JSON.stringify(store.settings.cover));
+    const settings = JSON.parse(JSON.stringify(store.settings.coverByKind?.library || {}));
     const numKeys = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
     const strKeys = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
     for (const k of numKeys) {

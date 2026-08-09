@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DB_FILE, DATA_DIR, COVERS_DIR, CACHE_DIR } from './config.js';
-import { isValidStyle, SIZE_PRESETS } from './covers/styles.js';
+import { isValidStyle } from './covers/styles.js';
 
 export function randomToken(len = 16) {
   return crypto.randomBytes(len).toString('hex');
@@ -15,29 +15,47 @@ export function defaultSettings() {
     webhookToken: randomToken(),
     accessToken: '',
     defaultStyle: 'single',
-    defaultPickBy: 'added',
     styleByKind: { library: 'single', collection: 'single' },
-    sizeByKind: { library: 'thumb', collection: 'poster' },
+    defaultPickByByKind: { library: 'added', collection: 'added' },
     cron: '0 */6 * * *',
     autoEnableNew: true,
     syncOnStart: true,
     webhookDebounceMs: 20000,
-    cover: {
-      width: 1000,
-      height: 1500,
-      titleSize: 84,
-      subtitleSize: 36,
-      titleColor: '#ffffff',
-      subtitleColor: '#c9d6f2',
-      bgTop: '#17233d',
-      bgBottom: '#0a0f1c',
-      backgroundMode: 'gradient',
-      accent: '#00a4dc',
-      radius: 20,
-      cellBorder: 2,
-      showCount: true,
-      fontFamily: 'Noto Sans CJK SC',
-      fontFile: ''
+    coverByKind: {
+      library: {
+        width: 1600,
+        height: 900,
+        titleSize: 84,
+        subtitleSize: 36,
+        titleColor: '#ffffff',
+        subtitleColor: '#c9d6f2',
+        bgTop: '#17233d',
+        bgBottom: '#0a0f1c',
+        backgroundMode: 'gradient',
+        accent: '#00a4dc',
+        radius: 20,
+        cellBorder: 2,
+        showCount: true,
+        fontFamily: 'Noto Sans CJK SC',
+        fontFile: ''
+      },
+      collection: {
+        width: 1000,
+        height: 1500,
+        titleSize: 84,
+        subtitleSize: 36,
+        titleColor: '#ffffff',
+        subtitleColor: '#c9d6f2',
+        bgTop: '#17233d',
+        bgBottom: '#0a0f1c',
+        backgroundMode: 'gradient',
+        accent: '#00a4dc',
+        radius: 20,
+        cellBorder: 2,
+        showCount: true,
+        fontFamily: 'Noto Sans CJK SC',
+        fontFile: ''
+      }
     }
   };
 }
@@ -53,9 +71,9 @@ function clampInt(v, min, max, fallback) {
 }
 
 function sanitizeCover(patch) {
-  const cover = { ...defaultSettings().cover, ...(patch || {}) };
+  const cover = { ...defaultSettings().coverByKind.library, ...(patch || {}) };
   for (const k of COVER_NUM_FIELDS) {
-    if (patch && k in patch) cover[k] = clampInt(patch[k], 1, 8192, defaultSettings().cover[k]);
+    if (patch && k in patch) cover[k] = clampInt(patch[k], 1, 8192, defaultSettings().coverByKind.library[k]);
   }
   for (const k of COVER_BOOL_FIELDS) {
     if (patch && k in patch) cover[k] = !!patch[k];
@@ -73,7 +91,18 @@ function sanitizeSettings(patch) {
   if ('webhookToken' in patch) out.webhookToken = String(patch.webhookToken || '').trim();
   if ('accessToken' in patch) out.accessToken = String(patch.accessToken || '').trim();
   if ('defaultStyle' in patch) out.defaultStyle = String(patch.defaultStyle || 'single');
-  if ('defaultPickBy' in patch) out.defaultPickBy = patch.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+  if ('defaultPickBy' in patch) {
+    // 兼容旧字段：同时写入两种类型的默认值
+    const d = patch.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+    out.defaultPickByByKind = { library: d, collection: d };
+  }
+  if ('defaultPickByByKind' in patch) {
+    const s = patch.defaultPickByByKind || {};
+    out.defaultPickByByKind = {
+      library: s.library === 'premiere' ? 'premiere' : 'added',
+      collection: s.collection === 'premiere' ? 'premiere' : 'added'
+    };
+  }
   if ('styleByKind' in patch) {
     const s = patch.styleByKind || {};
     out.styleByKind = {
@@ -81,18 +110,21 @@ function sanitizeSettings(patch) {
       collection: 'single'
     };
   }
-  if ('sizeByKind' in patch) {
-    const s = patch.sizeByKind || {};
-    out.sizeByKind = {
-      library: SIZE_PRESETS[s.library] ? s.library : 'thumb',
-      collection: SIZE_PRESETS[s.collection] ? s.collection : 'poster'
+  if ('cover' in patch) {
+    // 兼容旧字段：同时应用到两种类型
+    out.coverByKind = { library: sanitizeCover(patch.cover), collection: sanitizeCover(patch.cover) };
+  }
+  if ('coverByKind' in patch) {
+    const c = patch.coverByKind || {};
+    out.coverByKind = {
+      library: sanitizeCover(c.library),
+      collection: sanitizeCover(c.collection)
     };
   }
   if ('cron' in patch) out.cron = String(patch.cron || '0 */6 * * *').trim();
   if ('autoEnableNew' in patch) out.autoEnableNew = !!patch.autoEnableNew;
   if ('syncOnStart' in patch) out.syncOnStart = !!patch.syncOnStart;
   if ('webhookDebounceMs' in patch) out.webhookDebounceMs = clampInt(patch.webhookDebounceMs, 0, 600000, 20000);
-  if ('cover' in patch) out.cover = sanitizeCover(patch.cover);
   return out;
 }
 
@@ -132,10 +164,26 @@ export class Store {
       tasks: []
     };
     this.data = deepMerge(fresh, raw || {});
+    // 迁移：cover / defaultPickBy 拆分为媒体库、合集各自一套
+    const st = this.data.settings;
+    if (st.cover !== undefined) {
+      const oldCover = st.cover || {};
+      st.coverByKind = {
+        library: { ...st.coverByKind, ...oldCover, width: 1600, height: 900 },
+        collection: { ...st.coverByKind, ...oldCover, width: 1000, height: 1500 }
+      };
+      delete st.cover;
+    }
+    if (st.defaultPickBy !== undefined) {
+      const d = st.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+      st.defaultPickByByKind = { library: d, collection: d };
+      delete st.defaultPickBy;
+    }
     // 迁移：只保留单图/极简两种样式
     if (!isValidStyle(this.data.settings.defaultStyle)) this.data.settings.defaultStyle = 'single';
     for (const t of Object.values(this.data.targets)) {
-      if (!isValidStyle(t.template)) t.template = 'single';
+      // 空 template 表示跟随所属类型的全局默认
+      if (t.template && !isValidStyle(t.template)) t.template = '';
     }
     // 迁移：旧版本把「跟随全局默认」误存成了 added，统一改为空值
     if (!this.data.settings.pickByMigrated) {
@@ -152,6 +200,10 @@ export class Store {
         // 旧版「停用」等价于新版的「锁定（不监控）」
         t.locked = t.enabled === false;
         t.enabled = !t.locked;
+      }
+      if (t.configured === undefined) {
+        // 只有明确保存过配置（如手动选片）才视为手动配置
+        t.configured = Boolean(t.manualItemId);
       }
       if (t.embyCoverHash === undefined) t.embyCoverHash = '';
     }
@@ -190,9 +242,10 @@ export class Store {
       name: '',
       collectionType: '',
       enabled: true,
-      template: this.settings?.styleByKind?.[partial.kind] || this.settings?.defaultStyle || 'single',
+      template: '',
       size: '',
       titleOverride: '',
+      configured: false,
       itemHash: '',
       coverFile: '',
       coverHash: '',

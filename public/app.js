@@ -298,6 +298,7 @@ async function renderTargets() {
         <div class="row" style="gap:8px;flex-wrap:wrap">
           <button class="btn sm" id="batch-enable" disabled>取消锁定</button>
           <button class="btn sm" id="batch-disable" disabled>锁定</button>
+          <button class="btn sm" id="batch-reset" disabled>恢复默认配置</button>
           <button class="btn sm primary" id="batch-gen" disabled>更新封面</button>
         </div>
       </div>
@@ -334,7 +335,7 @@ function configHtml(t) {
   const isLib = t.kind === 'library';
   const pend = state.pendingCfg && state.pendingCfg.id === t.id ? state.pendingCfg : null;
   const style = pend ? pend.style : (t.template || state.styles?.styleByKind?.[t.kind] || 'single');
-  const pick = pend ? pend.pickBy : (t.pickBy || state.styles?.defaultPickBy || 'added');
+  const pick = pend ? pend.pickBy : (t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added');
   const manualName = pend ? pend.manualItemName : (t.manualItemName || '');
   const locked = Boolean(t.locked);
   // 样式：媒体库可选单图/海报墙，合集仅单图；顺序为样式在前、选图依据在后
@@ -351,6 +352,7 @@ function configHtml(t) {
     : `<button class="btn sm" data-save-cfg="${esc(t.id)}" data-lock="0">保存</button><button class="btn sm primary" data-save-cfg="${esc(t.id)}" data-lock="1">保存并锁定</button><button class="btn sm" data-lock-only="${esc(t.id)}">锁定</button><button class="btn sm ghost" data-cancel-cfg="${esc(t.id)}">取消</button>`;
   return `
     <div class="pick-config" data-pick-box="${esc(t.id)}" style="display:none;margin-top:8px">
+      <div class="meta" style="margin-bottom:6px">当前：${t.configured ? '<span class="badge warn-badge">手动配置</span>' : '<span class="badge gray">默认配置</span>'}${t.configured ? '' : `（跟随${isLib ? '媒体库' : '合集'}全局配置）`}</div>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
         <span class="muted" style="font-size:12px">封面样式</span>
         <select data-cfg-style="${esc(t.id)}" ${locked ? 'disabled' : ''} style="width:150px;padding:5px 8px;font-size:12px">${styleOpts}</select>
@@ -372,7 +374,7 @@ function setPendingField(id, key, value) {
   state.pendingCfg = {
     id,
     style: key === 'style' ? value : (cur?.style || t.template || state.styles?.styleByKind?.[t.kind] || 'single'),
-    pickBy: key === 'pickBy' ? value : (cur?.pickBy || t.pickBy || state.styles?.defaultPickBy || 'added'),
+    pickBy: key === 'pickBy' ? value : (cur?.pickBy || t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added'),
     manualItemId: cur?.manualItemId || t.manualItemId || '',
     manualItemName: cur?.manualItemName || t.manualItemName || ''
   };
@@ -382,7 +384,7 @@ function setPendingField(id, key, value) {
 function hasCfgChanges(t, cur) {
   if (!cur) return false;
   const curStyle = t.template || state.styles?.styleByKind?.[t.kind] || 'single';
-  const curPick = t.pickBy || state.styles?.defaultPickBy || 'added';
+  const curPick = t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added';
   if (cur.style !== curStyle) return true;
   if (cur.pickBy !== curPick) return true;
   if (cur.pickBy === 'manual' && cur.manualItemId !== (t.manualItemId || '')) return true;
@@ -409,7 +411,7 @@ function drawTargets() {
     const thumb = t.coverUrl
       ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
       : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;font-size:22px;${thumbStyle}">🎬</div>`;
-    const pickBy = t.pickBy || state.styles?.defaultPickBy || 'added';
+    const pickBy = t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added';
     const pickLabel = pickBy === 'premiere' ? '最新发行' : pickBy === 'manual' ? '手动选择' : '最新入库';
     const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
     const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount || 0} 部影片`;
@@ -425,7 +427,7 @@ function drawTargets() {
         <input type="checkbox" class="tick" data-id="${esc(t.id)}" ${state.selected.has(t.id) ? 'checked' : ''}>
         ${thumb}
         <div class="info">
-          <div class="name">${esc(t.name)} ${kind}${t.locked ? '<span class="badge warn-badge">已锁定</span>' : ''}${t.missing ? '<span class="badge gray">已删除</span>' : ''}</div>
+          <div class="name">${esc(t.name)} ${kind}${t.configured ? '<span class="badge warn-badge">手动配置</span>' : '<span class="badge gray">默认配置</span>'}${t.locked ? '<span class="badge warn-badge">已锁定</span>' : ''}${t.missing ? '<span class="badge gray">已删除</span>' : ''}</div>
           ${status}
           ${cfg}
         </div>
@@ -462,7 +464,7 @@ function drawTargets() {
       if (!t) return;
       const cur = state.pendingCfg && state.pendingCfg.id === id ? state.pendingCfg : null;
       const style = cur?.style || t.template || state.styles?.styleByKind?.[t.kind] || 'single';
-      let pick = cur?.pickBy || t.pickBy || state.styles?.defaultPickBy || 'added';
+      let pick = cur?.pickBy || t.pickBy || state.styles?.defaultPickByByKind?.[t.kind] || 'added';
       if (style !== 'single') pick = 'added'; // 海报墙样式不支持手动选择
       const withLock = el.dataset.lock === '1';
       const body = { template: style, pickBy: pick, locked: withLock };
@@ -571,7 +573,7 @@ function updateBatchUI() {
   const n = state.selected.size;
   const count = $('#sel-count');
   if (count) count.textContent = `已选 ${n} 项`;
-  ['batch-enable', 'batch-disable', 'batch-gen'].forEach((id) => {
+  ['batch-enable', 'batch-disable', 'batch-reset', 'batch-gen'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.disabled = n === 0;
   });
@@ -600,6 +602,7 @@ function bindBatch() {
   };
   $('#batch-enable').onclick = () => batchAction('enable');
   $('#batch-disable').onclick = () => batchAction('disable');
+  $('#batch-reset').onclick = () => batchAction('reset');
   $('#batch-gen').onclick = () => batchAction('generate');
   const syncState = state.status?.sync;
   if (syncState && (syncState.running || syncState.status === 'paused')) showSyncProgress();
@@ -612,6 +615,9 @@ async function batchAction(action, value = '') {
     const r = await api('/api/targets/batch', { method: 'POST', body: { ids, action, value } });
     if (action === 'generate') {
       toast(`已开始批量更新封面（${r.updated} 项）`, 'ok');
+      showSyncProgress();
+    } else if (action === 'reset') {
+      toast(`已恢复默认配置，正在重新生成封面（${r.updated} 项）`, 'ok');
       showSyncProgress();
     } else if (action === 'enable') {
       for (const id of ids) {
@@ -828,7 +834,41 @@ async function renderSettings() {
     return;
   }
   state.settings = s;
-  const c = s.cover;
+
+  function cfgDefaultCover(kind) {
+    return {
+      width: kind === 'library' ? 1600 : 1000,
+      height: kind === 'library' ? 900 : 1500,
+      titleSize: 84,
+      subtitleSize: 36,
+      titleColor: '#ffffff',
+      subtitleColor: '#c9d6f2',
+      bgTop: '#17233d',
+      bgBottom: '#0a0f1c',
+      backgroundMode: 'gradient',
+      accent: '#00a4dc',
+      radius: 20,
+      cellBorder: 2,
+      showCount: true,
+      fontFamily: 'Noto Sans CJK SC',
+      fontFile: ''
+    };
+  }
+  // 媒体库、合集各自一套默认配置（样式/选图依据/字号/颜色/字体等）
+  state.cfgKind = 'library';
+  state.cfgDraft = {
+    library: {
+      style: s.styleByKind?.library || 'single',
+      pickBy: s.defaultPickByByKind?.library || 'added',
+      cover: { ...cfgDefaultCover('library'), ...(s.coverByKind?.library || {}) }
+    },
+    collection: {
+      style: 'single',
+      pickBy: s.defaultPickByByKind?.collection || 'added',
+      cover: { ...cfgDefaultCover('collection'), ...(s.coverByKind?.collection || {}) }
+    }
+  };
+  const c = state.cfgDraft.library.cover;
 
   main.innerHTML = `
     <div class="page-title">设置</div>
@@ -916,9 +956,9 @@ async function renderSettings() {
           </div>
           <div class="row" style="gap:22px;align-items:flex-start;margin-top:10px">
             <label class="field" style="max-width:320px"><span class="lab">选图依据（单图海报）</span>
-              <select id="set-defaultPickBy">
-                <option value="added" ${s.defaultPickBy === 'premiere' ? '' : 'selected'}>加入时间（最新入库）</option>
-                <option value="premiere" ${s.defaultPickBy === 'premiere' ? 'selected' : ''}>发行时间（最新发行）</option>
+              <select id="set-cfg-pickBy">
+                <option value="added" ${state.cfgDraft.library.pickBy === 'premiere' ? '' : 'selected'}>加入时间（最新入库）</option>
+                <option value="premiere" ${state.cfgDraft.library.pickBy === 'premiere' ? 'selected' : ''}>发行时间（最新发行）</option>
               </select>
               <span class="hint">单图海报样式按此依据挑选要展示的海报</span>
             </label>
@@ -980,18 +1020,62 @@ async function renderSettings() {
     </div>
     `;
 
+  function saveDraftFromDom() {
+    const k = state.cfgKind;
+    state.cfgDraft[k] = {
+      style: k === 'library' ? ($('#set-lib-style')?.value || 'single') : 'single',
+      pickBy: $('#set-cfg-pickBy')?.value || 'added',
+      cover: {
+        titleSize: Number($('#set-titleSize').value),
+        subtitleSize: Number($('#set-subtitleSize').value),
+        bgTop: $('#set-bgTop').value,
+        bgBottom: $('#set-bgBottom').value,
+        accent: $('#set-accent').value,
+        titleColor: $('#set-titleColor').value,
+        subtitleColor: $('#set-subtitleColor').value,
+        fontFamily: $('#set-fontFamily').value.trim(),
+        fontFile: $('#set-fontFile').value.trim(),
+        backgroundMode: $('#set-backgroundMode').value,
+        showCount: $('#set-showCount').checked
+      }
+    };
+  }
+
+  function applyDraftToDom(k) {
+    const d = state.cfgDraft[k];
+    if (!$('#set-lib-style')) return;
+    $('#set-lib-style').value = d.style;
+    $('#set-cfg-pickBy').value = d.pickBy;
+    $('#set-titleSize').value = d.cover.titleSize;
+    $('#set-subtitleSize').value = d.cover.subtitleSize;
+    $('#set-bgTop').value = d.cover.bgTop;
+    $('#set-bgBottom').value = d.cover.bgBottom;
+    $('#set-accent').value = d.cover.accent;
+    $('#set-titleColor').value = d.cover.titleColor;
+    $('#set-subtitleColor').value = d.cover.subtitleColor;
+    $('#set-fontFamily').value = d.cover.fontFamily;
+    $('#set-fontFile').value = d.cover.fontFile || '';
+    $('#set-backgroundMode').value = d.cover.backgroundMode || 'gradient';
+    $('#set-showCount').checked = d.cover.showCount !== false;
+    $('#cfg-lib-fields').style.display = k === 'library' ? '' : 'none';
+    $('#cfg-col-fields').style.display = k === 'collection' ? '' : 'none';
+    document.querySelectorAll('#cfg-kind .seg-btn').forEach((x) => {
+      x.classList.toggle('active', x.dataset.kind === k);
+    });
+  }
+
   document.querySelectorAll('#cfg-kind .seg-btn').forEach((b) => {
     b.onclick = () => {
-      document.querySelectorAll('#cfg-kind .seg-btn').forEach((x) => x.classList.toggle('active', x === b));
-      $('#cfg-lib-fields').style.display = b.dataset.kind === 'library' ? '' : 'none';
-      $('#cfg-col-fields').style.display = b.dataset.kind === 'collection' ? '' : 'none';
+      saveDraftFromDom();
+      state.cfgKind = b.dataset.kind;
+      applyDraftToDom(state.cfgKind);
       refreshCfgPreview();
     };
   });
 
   let cfgPreviewTimer = null;
   function refreshCfgPreview() {
-    const kind = (document.querySelector('#cfg-kind .seg-btn.active')?.dataset.kind) || 'library';
+    const kind = state.cfgKind || 'library';
     const style = kind === 'library' ? ($('#set-lib-style')?.value || 'single') : 'single';
     const size = kind === 'library' ? 'thumb' : 'poster'; // 尺寸强制：媒体库 16:9，合集 2:3
     const q = new URLSearchParams({
@@ -1027,7 +1111,7 @@ async function renderSettings() {
       pre.src = url;
     }
   }
-  ['#set-lib-style', '#set-defaultPickBy', '#set-backgroundMode', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor', '#set-fontFamily', '#set-fontFile'].forEach((sel) => {
+  ['#set-lib-style', '#set-cfg-pickBy', '#set-backgroundMode', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor', '#set-fontFamily', '#set-fontFile'].forEach((sel) => {
     const el = document.querySelector(sel);
     if (!el) return;
     el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
@@ -1130,21 +1214,13 @@ async function renderSettings() {
   syncBgFields();
 
   function collectCoverBody() {
+    saveDraftFromDom();
     return {
-      defaultPickBy: $('#set-defaultPickBy').value,
-      styleByKind: { library: $('#set-lib-style').value, collection: 'single' },
-      cover: {
-        titleSize: Number($('#set-titleSize').value),
-        subtitleSize: Number($('#set-subtitleSize').value),
-        bgTop: $('#set-bgTop').value,
-        bgBottom: $('#set-bgBottom').value,
-        accent: $('#set-accent').value,
-        titleColor: $('#set-titleColor').value,
-        subtitleColor: $('#set-subtitleColor').value,
-        fontFamily: $('#set-fontFamily').value.trim(),
-        fontFile: $('#set-fontFile').value.trim(),
-        backgroundMode: $('#set-backgroundMode').value,
-        showCount: $('#set-showCount').checked
+      styleByKind: { library: state.cfgDraft.library.style, collection: 'single' },
+      defaultPickByByKind: { library: state.cfgDraft.library.pickBy, collection: state.cfgDraft.collection.pickBy },
+      coverByKind: {
+        library: { ...state.cfgDraft.library.cover, width: 1600, height: 900 },
+        collection: { ...state.cfgDraft.collection.cover, width: 1000, height: 1500 }
       }
     };
   }
@@ -1205,7 +1281,7 @@ async function renderSettings() {
     btn.innerHTML = '<span class="spinner"></span> 保存中…';
     try {
       await saveSettings();
-      const kind = (document.querySelector('#cfg-kind .seg-btn.active')?.dataset.kind) || 'library';
+      const kind = state.cfgKind || 'library';
       toast(`设置已保存，开始重新生成${kind === 'library' ? '媒体库' : '合集'}封面…`, 'ok');
       showSyncProgress();
       api('/api/sync', { method: 'POST', body: { force: true, onlyKind: kind } }).then(() => {}).catch(() => {});

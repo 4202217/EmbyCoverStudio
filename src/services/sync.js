@@ -31,7 +31,7 @@ function effectivePickBy(target, settings) {
   if (target?.pickBy === 'manual') return 'manual';
   if (target?.pickBy === 'premiere') return 'premiere';
   if (target?.pickBy === 'added') return 'added';
-  return settings.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+  return settings.defaultPickByByKind?.[target.kind] === 'premiere' ? 'premiere' : 'added';
 }
 
 function posterNeed(style) {
@@ -162,7 +162,7 @@ export function createSyncService(store) {
       ? 'single'
       : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single'));
     const pickBy = effectivePickBy(target, settings);
-    const genSettings = { ...settings.cover, width: size.width, height: size.height };
+    const genSettings = { ...(settings.coverByKind?.[target.kind] || {}), width: size.width, height: size.height };
     const settingsHash = sha1(JSON.stringify({ cover: genSettings, template: style, defaultPickBy: pickBy }));
     const { posters, total } = await collectPosters(target, client, genSettings, { pickBy, manualItemId: target.manualItemId, need: posterNeed(style) });
     const hash = sha1(posters.map((p) => `${p.id}:${p.imageTag}`).join('|'));
@@ -437,7 +437,7 @@ export function createSyncService(store) {
       ? 'single'
       : (isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single')));
     const pickBy = effectivePickBy(target, store.settings);
-    const genSettings = { ...settings.cover, width: size.width, height: size.height };
+    const genSettings = { ...(settings.coverByKind?.[target.kind] || {}), width: size.width, height: size.height };
     if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {
       genSettings.backgroundMode = overrides.backgroundMode;
     }
