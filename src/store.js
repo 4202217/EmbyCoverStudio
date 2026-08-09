@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DB_FILE, DATA_DIR, COVERS_DIR, CACHE_DIR } from './config.js';
-import { isValidStyle } from './covers/styles.js';
+import { isValidStyle, SIZE_PRESETS } from './covers/styles.js';
 
 export function randomToken(len = 16) {
   return crypto.randomBytes(len).toString('hex');
@@ -16,6 +16,8 @@ export function defaultSettings() {
     accessToken: '',
     defaultStyle: 'single',
     defaultPickBy: 'added',
+    styleByKind: { library: 'single', collection: 'single' },
+    sizeByKind: { library: 'thumb', collection: 'poster' },
     cron: '0 */6 * * *',
     autoEnableNew: true,
     syncOnStart: true,
@@ -72,6 +74,20 @@ function sanitizeSettings(patch) {
   if ('accessToken' in patch) out.accessToken = String(patch.accessToken || '').trim();
   if ('defaultStyle' in patch) out.defaultStyle = String(patch.defaultStyle || 'single');
   if ('defaultPickBy' in patch) out.defaultPickBy = patch.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+  if ('styleByKind' in patch) {
+    const s = patch.styleByKind || {};
+    out.styleByKind = {
+      library: s.library === 'wall3' ? 'wall3' : 'single',
+      collection: 'single'
+    };
+  }
+  if ('sizeByKind' in patch) {
+    const s = patch.sizeByKind || {};
+    out.sizeByKind = {
+      library: SIZE_PRESETS[s.library] ? s.library : 'thumb',
+      collection: SIZE_PRESETS[s.collection] ? s.collection : 'poster'
+    };
+  }
   if ('cron' in patch) out.cron = String(patch.cron || '0 */6 * * *').trim();
   if ('autoEnableNew' in patch) out.autoEnableNew = !!patch.autoEnableNew;
   if ('syncOnStart' in patch) out.syncOnStart = !!patch.syncOnStart;
@@ -128,6 +144,17 @@ export class Store {
       }
       this.data.settings.pickByMigrated = true;
     }
+    // 迁移：为旧数据补齐手动选图/锁定/Emby 封面指纹字段
+    for (const t of Object.values(this.data.targets)) {
+      if (t.manualItemId === undefined) t.manualItemId = '';
+      if (t.manualItemName === undefined) t.manualItemName = '';
+      if (t.locked === undefined) {
+        // 旧版「停用」等价于新版的「锁定（不监控）」
+        t.locked = t.enabled === false;
+        t.enabled = !t.locked;
+      }
+      if (t.embyCoverHash === undefined) t.embyCoverHash = '';
+    }
     this.save();
   }
 
@@ -162,15 +189,19 @@ export class Store {
       kind: 'collection',
       name: '',
       collectionType: '',
-      enabled: false,
-      template: this.settings?.defaultStyle || 'single',
+      enabled: true,
+      template: this.settings?.styleByKind?.[partial.kind] || this.settings?.defaultStyle || 'single',
       size: '',
       titleOverride: '',
       itemHash: '',
       coverFile: '',
       coverHash: '',
+      embyCoverHash: '',
       itemCount: 0,
       posterCount: 0,
+      manualItemId: '',
+      manualItemName: '',
+      locked: false,
       lastGeneratedAt: '',
       lastError: '',
       missing: false,

@@ -188,6 +188,7 @@ input[type="color"] {
 }
 .switch input:checked + .slider { background: var(--accent); }
 .switch input:checked + .slider::before { transform: translateX(18px); }
+.switch input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
 
 .tick { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
 
@@ -202,6 +203,10 @@ input[type="color"] {
   cursor: pointer;
 }
 .chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg-btn { padding: 6px 16px; font-size: 13px; background: var(--panel); color: var(--muted); border: none; cursor: pointer; }
+.seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+.seg-btn.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
 .tlist { display: flex; flex-direction: column; gap: 10px; }
 .trow {
@@ -379,10 +384,21 @@ input[type="color"] {
   justify-content: center;
 }
 .modal .pv-row img {
-  width: 220px;
   max-width: 100%;
   height: auto;
   flex-shrink: 0;
+}
+.pv-empty {
+  min-width: 220px;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
 }
 .modal .pv-side {
   display: flex;
@@ -391,6 +407,42 @@ input[type="color"] {
   align-items: flex-start;
 }
 .modal .pv-side .modal-note { margin-top: 0; }
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+}
+.picker-item img {
+  width: 80px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--panel);
+}
+.picker-item span {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.picker-item:hover { border-color: var(--accent); }
 
 .muted { color: var(--muted); }
 .mt { margin-top: 14px; }

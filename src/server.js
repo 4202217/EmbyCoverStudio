@@ -10,7 +10,7 @@ import { EmbyClient } from './emby/client.js';
 import { generateCover } from './covers/generator.js';
 import { placeholderPoster } from './covers/placeholders.js';
 import { fontStatus } from './covers/fonts.js';
-import { STYLES, SIZE_PRESETS, DEFAULT_SIZE_BY_KIND } from './covers/styles.js';
+import { STYLES, SIZE_PRESETS, DEFAULT_SIZE_BY_KIND, isValidStyle } from './covers/styles.js';
 import { createSyncService } from './services/sync.js';
 import { createWebhookService } from './services/webhook.js';
 
@@ -147,7 +147,7 @@ export async function createApp(options = {}) {
       emby: await getEmbyStatus(),
       stats: {
         targets: targets.length,
-        enabled: targets.filter((t) => t.enabled).length,
+        enabled: targets.filter((t) => !t.locked).length,
         generated: targets.filter((t) => t.coverFile).length,
         missing: targets.filter((t) => t.missing).length,
         failed: targets.filter((t) => t.lastError).length,
@@ -221,7 +221,9 @@ export async function createApp(options = {}) {
       styles: STYLES,
       sizes: Object.values(SIZE_PRESETS),
       defaults: DEFAULT_SIZE_BY_KIND,
-      defaultPickBy: store.settings.defaultPickBy || 'added'
+      defaultPickBy: store.settings.defaultPickBy || 'added',
+      styleByKind: store.settings.styleByKind,
+      sizeByKind: store.settings.sizeByKind
     });
   });
 
@@ -233,28 +235,49 @@ export async function createApp(options = {}) {
       sendJson(res, 400, { error: '请选择至少一个合集' });
       return;
     }
-    if (action === 'enable') {
-      for (const id of ids) store.updateTarget(id, { enabled: true });
-      syncService.runSync({ reason: '批量启用', onlyIds: ids, force: true }).catch(() => {});
-    } else if (action === 'disable') {
-      for (const id of ids) store.updateTarget(id, { enabled: false });
-    } else if (action === 'template') {
+    if (action === 'enable' || action === 'disable') {
+      // 恢复监控=解锁，停止监控=锁定
+      const affected = action === 'enable'
+        ? ids.filter((id) => store.getTarget(id).locked)
+        : ids.filter((id) => !store.getTarget(id).locked);
+      if (!affected.length) {
+        sendJson(res, 400, { error: action === 'enable' ? '所选合集均未锁定' : '所选合集均已锁定' });
+        return;
+      }
+      if (action === 'enable') {
+        for (const id of affected) store.updateTarget(id, { locked: false, enabled: true });
+      } else {
+        for (const id of affected) store.updateTarget(id, { locked: true, enabled: false });
+      }
+      sendJson(res, 200, { ok: true, updated: affected.length });
+      return;
+    }
+    // 其余批量操作（模板/选图/更新）只对未锁定项生效
+    const unlocked = ids.filter((id) => !store.getTarget(id).locked);
+    if (!unlocked.length) {
+      sendJson(res, 400, { error: '所选合集均已锁定，请先解除锁定' });
+      return;
+    }
+    if (action === 'template') {
       const style = String(body.value || 'grid');
       if (!STYLES.some((s) => s.id === style)) {
         sendJson(res, 400, { error: '未知样式' });
         return;
       }
-      for (const id of ids) store.updateTarget(id, { template: style });
+      for (const id of unlocked) {
+        const t = store.getTarget(id);
+        store.updateTarget(id, { template: t.kind === 'collection' ? 'single' : style });
+      }
     } else if (action === 'pickBy') {
       const pick = body.value === 'premiere' ? 'premiere' : 'added';
-      for (const id of ids) store.updateTarget(id, { pickBy: pick });
+      for (const id of unlocked) store.updateTarget(id, { pickBy: pick });
     } else if (action === 'generate') {
-      syncService.runSync({ reason: '批量更新', onlyIds: ids, force: true }).catch(() => {});
+      syncService.runSync({ reason: '批量更新', onlyIds: unlocked, force: true }).catch(() => {});
     } else {
       sendJson(res, 400, { error: '未知操作' });
       return;
     }
-    sendJson(res, 200, { ok: true, updated: ids.length });
+    sendJson(res, 200, { ok: true, updated: unlocked.length, skipped: ids.length - unlocked.length });
   });
 
   route('PUT', '/api/targets/:id', async (req, res, params) => {
@@ -266,15 +289,62 @@ export async function createApp(options = {}) {
     }
     const patch = {};
     if ('enabled' in body) patch.enabled = Boolean(body.enabled);
-    if ('template' in body) patch.template = String(body.template || 'single');
+    if ('template' in body) {
+      const v = String(body.template || 'single');
+      // 合集仅支持单图海报
+      patch.template = target.kind === 'collection' ? 'single' : (isValidStyle(v) ? v : 'single');
+    }
     if ('titleOverride' in body) patch.titleOverride = String(body.titleOverride || '').trim();
-    if ('pickBy' in body) patch.pickBy = body.pickBy === 'premiere' ? 'premiere' : 'added';
+    if ('pickBy' in body) {
+      const v = String(body.pickBy || '');
+      patch.pickBy = ['added', 'premiere', 'manual'].includes(v) ? v : 'added';
+      if (patch.pickBy !== 'manual') {
+        patch.manualItemId = '';
+        patch.manualItemName = '';
+      }
+    }
+    if ('manualItemId' in body) patch.manualItemId = String(body.manualItemId || '').trim();
+    if ('manualItemName' in body) patch.manualItemName = String(body.manualItemName || '').trim();
+    if ('locked' in body) {
+      patch.locked = Boolean(body.locked);
+      patch.enabled = !patch.locked;
+    }
     if ('needsRegen' in body) patch.needsRegen = Boolean(body.needsRegen);
     store.updateTarget(target.id, patch);
     if (patch.enabled === true && !target.coverFile) {
       syncService.syncById(target.id, { force: true, reason: '启用合集' }).catch(() => {});
     }
     sendJson(res, 200, { ok: true, target: store.getTarget(target.id) });
+  });
+
+  route('GET', '/api/targets/:id/items', async (req, res, params) => {
+    const target = store.getTarget(params.id);
+    if (!target) {
+      sendJson(res, 404, { error: '目标不存在' });
+      return;
+    }
+    try {
+      const client = new EmbyClient(store.settings);
+      const items = await client.getCoverItems(target, 300);
+      sendJson(res, 200, { ok: true, items });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message });
+    }
+  });
+
+  route('GET', '/api/item-image/:id', async (req, res, params, query) => {
+    const id = String(params.id || '');
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      sendJson(res, 400, { error: '非法 ID' });
+      return;
+    }
+    const w = Math.min(400, Math.max(80, Number(query.get('w')) || 240));
+    try {
+      const buf = await new EmbyClient(store.settings).getImage(id, w);
+      sendBuffer(res, 200, buf, 'image/jpeg', 'public, max-age=3600');
+    } catch (e) {
+      sendJson(res, 404, { error: e.message });
+    }
   });
 
   route('POST', '/api/targets/:id/generate', async (req, res, params) => {
@@ -285,7 +355,8 @@ export async function createApp(options = {}) {
 
   route('POST', '/api/sync', async (req, res) => {
     const body = await readJson(req);
-    const result = await syncService.runSync({ force: Boolean(body.force), reason: '手动同步' });
+    const onlyKind = body.onlyKind === 'library' || body.onlyKind === 'collection' ? body.onlyKind : null;
+    const result = await syncService.runSync({ force: Boolean(body.force), reason: '手动同步', onlyKind });
     sendJson(res, result.ok ? 200 : 400, result);
   });
 
@@ -342,7 +413,7 @@ export async function createApp(options = {}) {
       subtitle: settings.showCount ? `共 ${count} 部作品` : '',
       posters,
       settings,
-      style: 'single'
+      style: STYLES.some((s) => s.id === query.get('style')) ? query.get('style') : 'single'
     });
     sendBuffer(res, 200, png, 'image/png');
   });

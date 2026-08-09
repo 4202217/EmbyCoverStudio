@@ -36,18 +36,18 @@ export function createWebhookService(store, syncService) {
     if (event === 'library.new' || event === 'library.updated') {
       const t = store.getTarget(itemId);
       if (!t || t.kind !== 'library') return null;
-      return t.enabled ? [t.id] : [];
+      return !t.locked ? [t.id] : [];
     }
     if (event === 'collection.updated') {
       const t = store.getTarget(itemId);
       if (!t || t.kind !== 'collection') return null;
-      return t.enabled ? [t.id] : [];
+      return !t.locked ? [t.id] : [];
     }
     // item.added / item.updated / item.removed：通过祖先查询定位所属媒体库与合集
     const ancestors = await new EmbyClient(store.settings).getItemAncestors(itemId).catch(() => []);
     if (!ancestors.length) return null;
     const ids = new Set(ancestors.map((a) => String(a.id)));
-    const matched = store.listTargets().filter((t) => ids.has(t.id) && t.enabled).map((t) => t.id);
+    const matched = store.listTargets().filter((t) => ids.has(t.id) && !t.locked).map((t) => t.id);
     return matched.length ? matched : [];
   }
 

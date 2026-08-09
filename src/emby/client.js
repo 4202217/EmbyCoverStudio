@@ -244,6 +244,21 @@ export class EmbyClient {
     }
   }
 
+  // 获取封面原始文件（不加任何缩放/质量参数），用于对比 Emby 当前封面是否与本工具上次生成的一致
+  async getOriginalImage(itemId) {
+    const p = `/Items/${itemId}/Images/Primary`;
+    try {
+      return await this._buffer(p);
+    } catch (e) {
+      if (e.status !== 401 && e.status !== 404) throw e;
+      const uid = await this._ensureUser();
+      if (uid) {
+        return await this._buffer(`/Users/${uid}/Items/${itemId}/Images/Primary`);
+      }
+      throw e;
+    }
+  }
+
   async uploadImage(itemId, pngBuffer) {
     const p = `/Items/${itemId}/Images/Primary`;
     const b64 = pngBuffer.toString('base64');

@@ -74,7 +74,7 @@ async function accentBar(width, height, color) {
   return sharp(svg).png().toBuffer();
 }
 
-async function textLayer({ text, size, color, width, height, family, file }) {
+async function textLayer({ text, size, color, width, height, family, file, align = 'centre' }) {
   const fontDesc = `${family} ${size}`;
   const markup = `<span font="${fontDesc}" foreground="${color}" font_weight="bold">${escXml(text)}</span>`;
   const buf = await sharp({
@@ -84,7 +84,7 @@ async function textLayer({ text, size, color, width, height, family, file }) {
       fontfile: file || undefined,
       width: Math.max(10, Math.floor(width)),
       height: Math.max(10, Math.floor(height)),
-      align: 'centre',
+      align,
       rgba: true
     }
   }).png().toBuffer();
@@ -121,7 +121,7 @@ async function posterCell(buffer, w, h, radius, border, borderColor) {
 /**
  * 渲染标题 + 强调横线 + 副标题，返回图层（渲染在 topY=0，可整体位移）
  */
-async function titleLayers({ ctx, maxW, align = 'center', cx = 0, titleSize, centerIn = 0 }) {
+async function titleLayers({ ctx, maxW, align = 'center', cx = 0, titleSize, subtitleSize, centerIn = 0 }) {
   const size = titleSize || ctx.titleSize;
   const layers = [];
   const titlePng = await textLayer({
@@ -131,7 +131,8 @@ async function titleLayers({ ctx, maxW, align = 'center', cx = 0, titleSize, cen
     width: maxW,
     height: Math.round(size * 1.7),
     family: ctx.family,
-    file: ctx.file
+    file: ctx.file,
+    align: align === 'left' ? 'left' : 'centre'
   });
   const tMeta = await sharp(titlePng).metadata();
   const tx = align === 'center' ? Math.round(cx - tMeta.width / 2) : cx;
@@ -146,14 +147,16 @@ async function titleLayers({ ctx, maxW, align = 'center', cx = 0, titleSize, cen
 
   let stackBottom = barY + barH;
   if (ctx.showCount && ctx.subtitle) {
+    const subSize = subtitleSize || ctx.subtitleSize;
     const subPng = await textLayer({
       text: ctx.subtitle,
-      size: ctx.subtitleSize,
+      size: subSize,
       color: ctx.settings.subtitleColor || '#c9d6f2',
       width: maxW,
-      height: Math.round(ctx.subtitleSize * 1.8),
+      height: Math.round(subSize * 1.8),
       family: ctx.family,
-      file: ctx.file
+      file: ctx.file,
+      align: align === 'left' ? 'left' : 'centre'
     });
     const sMeta = await sharp(subPng).metadata();
     const sY = barY + barH + gapA;
@@ -227,13 +230,84 @@ async function layoutSingle(ctx, list) {
 }
 
 /**
+ * 海报墙：左侧文字（左对齐、字号偏小），右侧为向右倾斜 30-45° 的海报墙
+ */
+async function layoutWall(ctx, list) {
+  const { W, H } = ctx;
+  const pad = Math.round(W * 0.07); // 文字左间距（与上间距保持一致）
+  const angle = 30; // 向右倾斜角度
+  const rows = 3;
+  const gapX = Math.max(4, Math.round(8 * ctx.scale));
+  const gapY = Math.max(4, Math.round(8 * ctx.scale));
+  const cols = 3;
+  const pw = Math.round(W * 0.19); // 海报更大
+  const ph = Math.round(pw * 1.5);
+  const staggerY = Math.round(ph * 0.42); // 偶数列纵向错位
+  const firstColDown = Math.round(ph * 0.25); // 第一列单独下移 1/4 海报高度
+  const wallW = cols * pw + (cols - 1) * gapX;
+  const wallH = rows * ph + (rows - 1) * gapY + staggerY;
+  const smallRadius = Math.max(2, Math.round(ctx.radius * 0.45)); // 圆角更小
+
+  const comps = [];
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const idx = r * cols + c;
+      if (idx >= list.length) break;
+      const cell = await posterCell(list[idx], pw, ph, smallRadius, ctx.border, 'rgba(255,255,255,0.35)');
+      const colOff = c === 0 ? firstColDown : (c % 2 === 1 ? staggerY : 0); // 第一列再下移，偶数列错位
+      comps.push({ input: cell, left: c * (pw + gapX), top: r * (ph + gapY) + colOff });
+    }
+  }
+  const wallPng = await sharp({
+    create: { width: wallW, height: wallH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+  }).composite(comps).png().toBuffer();
+  const rotated = await sharp(wallPng).rotate(angle, { background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+  const meta = await sharp(rotated).metadata();
+
+  // 在更大的画布上合成，让海报墙从上下/右侧溢出画面，再裁剪回目标尺寸，形成无限流
+  const bleedTop = Math.max(0, Math.round((meta.height - H) / 2)) + Math.round(H * 0.08);
+  const shiftDown = Math.round(H * 0.09); // 海报墙整体下移，覆盖左下角
+  const bleedBottom = Math.max(0, Math.round((meta.height - H) / 2)) + Math.round(H * 0.08) + shiftDown;
+
+  // 文字固定在左上角，海报墙整体右移后从右到左填满剩余空间（并向右溢出一点）
+  const wallLeft = Math.max(pad, Math.round(W * 0.28)); // 整体再往左移，可见部分约占 3/5
+  const bleedRight = Math.max(pad, Math.round(wallLeft + meta.width - W) + pad);
+  const canvasW = W + bleedRight;
+  const canvasH = H + bleedTop + bleedBottom;
+  const wallTop = Math.round((H - meta.height) / 2) + bleedTop + shiftDown;
+
+  const bg = ctx.bg || await backgroundLayer(W, H, ctx.settings.bgTop || '#17233d', ctx.settings.bgBottom || '#0a0f1c', ctx.settings.accent || '#00a4dc');
+  const layers = [{ input: bg, left: 0, top: bleedTop }];
+  layers.push({ input: rotated, left: wallLeft, top: wallTop });
+
+  // 文字区域向右侧扩展到海报墙可见边缘，避免大字号过早换行
+  const textW = Math.max(120, Math.round(W * 0.36) - pad);
+  const textTop = pad; // 上与左间距保持一致
+  const t = await titleLayers({
+    ctx,
+    maxW: textW,
+    align: 'left',
+    cx: pad,
+    titleSize: Math.round(ctx.titleSize * 0.68),
+    subtitleSize: Math.round(ctx.subtitleSize * 0.85)
+  });
+  for (const l of t.layers) l.top += bleedTop + textTop;
+  layers.push(...t.layers);
+
+  const full = await sharp({
+    create: { width: canvasW, height: canvasH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }
+  }).composite(layers).png().toBuffer();
+  return sharp(full).extract({ left: 0, top: bleedTop, width: W, height: H }).png().toBuffer();
+}
+
+/**
  * 生成封面
  * @param {object} opts
  * @param {string} opts.title 标题（库名）
  * @param {string} [opts.subtitle] 副标题（如影片数量）
  * @param {Buffer[]} opts.posters 影片封面图
  * @param {object} opts.settings 封面设置（cover 字段）
- * @param {string} [opts.style] 样式（当前仅 single 单图海报）
+ * @param {string} [opts.style] 样式（single 单图海报 / wall3 海报墙）
  * @param {object} [opts.font] 字体信息
  */
 export async function generateCover({ title, subtitle = '', posters = [], settings = {}, style = 'single', font }) {
@@ -250,8 +324,12 @@ export async function generateCover({ title, subtitle = '', posters = [], settin
     ctx.bg = await posterBackground(list[0], W, H);
   }
 
-  // 当前仅保留单图海报样式
-  const layers = await layoutSingle(ctx, list);
+  let layers;
+  if (style === 'wall3') {
+    // 海报墙直接返回最终成图（含溢出裁剪）
+    return layoutWall(ctx, list);
+  }
+  layers = await layoutSingle(ctx, list);
 
   return sharp({
     create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }

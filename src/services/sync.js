@@ -28,9 +28,24 @@ function taskRecord({ name, type, trigger, status, updated = 0, unchanged = 0, f
 }
 
 function effectivePickBy(target, settings) {
+  if (target?.pickBy === 'manual') return 'manual';
   if (target?.pickBy === 'premiere') return 'premiere';
   if (target?.pickBy === 'added') return 'added';
   return settings.defaultPickBy === 'premiere' ? 'premiere' : 'added';
+}
+
+function posterNeed(style) {
+  if (style === 'wall3') return 9;
+  return 1;
+}
+
+async function embyCoverFingerprint(client, itemId) {
+  try {
+    const buf = await client.getOriginalImage(itemId);
+    return buf && buf.length ? sha1(buf) : '';
+  } catch {
+    return '';
+  }
 }
 
 async function mapLimit(items, limit, fn, shouldStop) {
@@ -98,13 +113,22 @@ export function createSyncService(store) {
     return [...items].sort((a, b) => (b.dateCreated || '').localeCompare(a.dateCreated || ''));
   }
 
-  async function collectPosters(target, client, settings, { pickBy = 'added' } = {}) {
+  async function collectPosters(target, client, settings, { pickBy = 'added', manualItemId = '', need = 1 } = {}) {
     // 元数据拉取上限提高，保证副标题数量统计完整（仅下载需要的海报图）
     const raw = await client.getCoverItems(target, 500);
-    const sorted = sortByPick(raw, pickBy);
+    let sorted = sortByPick(raw, pickBy);
+    if (pickBy === 'manual' && manualItemId) {
+      const manual = raw.find((i) => i.id === String(manualItemId));
+      if (manual && manual.hasPrimary) {
+        sorted = [manual];
+      } else {
+        // 手动选择的影片已不存在或无封面，回退为最新入库
+        sorted = sortByPick(raw, 'added');
+      }
+    }
     const posterW = Math.max(240, Math.round(settings.width * 0.4));
     const withPrimary = sorted.filter((i) => i.hasPrimary);
-    const candidates = withPrimary.slice(0, 1);
+    const candidates = withPrimary.slice(0, Math.max(1, need));
     const withPosters = await mapLimit(candidates, 4, async (item) => {
       const poster = await cachedPoster(client, item.id, posterW, item.imageTag);
       return poster ? { ...item, poster } : null;
@@ -131,17 +155,28 @@ export function createSyncService(store) {
 
   async function syncTarget(target, client, { force = false } = {}) {
     const settings = store.settings;
-    const size = resolveSize(target, settings.cover);
-    const style = isValidStyle(target.template) ? target.template : 'single';
+    const size = resolveSize(target, settings);
+    const defStyle = settings.styleByKind?.[target.kind] || 'single';
+    // 合集仅支持单图海报；媒体库支持单图/海报墙（无单独设置时用全局默认）
+    const style = target.kind === 'collection'
+      ? 'single'
+      : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single'));
     const pickBy = effectivePickBy(target, settings);
     const genSettings = { ...settings.cover, width: size.width, height: size.height };
     const settingsHash = sha1(JSON.stringify({ cover: genSettings, template: style, defaultPickBy: pickBy }));
-    const { posters, total } = await collectPosters(target, client, genSettings, { pickBy });
+    const { posters, total } = await collectPosters(target, client, genSettings, { pickBy, manualItemId: target.manualItemId, need: posterNeed(style) });
     const hash = sha1(posters.map((p) => `${p.id}:${p.imageTag}`).join('|'));
     const localFile = path.join(COVERS_DIR, `${target.id}.png`);
     let png = null;
     const unchanged = hash === target.itemHash && settingsHash === target.coverSettingsHash;
-    if (!force && unchanged && target.coverFile && !target.needsRegen && !target.needsUpload) {
+    // 检测 Emby 中封面是否被外部修改过（如另一实例生成、手动替换），以 Emby 实际封面为准
+    const embyHash = await embyCoverFingerprint(client, target.id);
+    const coverChangedExternally = Boolean(
+      embyHash &&
+      target.coverFile &&
+      (target.embyCoverHash ? embyHash !== target.embyCoverHash : (target.coverHash ? embyHash !== target.coverHash : false))
+    );
+    if (!force && unchanged && target.coverFile && !target.needsRegen && !target.needsUpload && !coverChangedExternally) {
       const patch = {};
       if (target.itemCount !== total) {
         patch.itemCount = total;
@@ -149,10 +184,11 @@ export function createSyncService(store) {
       }
       const src = posters[0]?.name || '';
       if (target.posterSource !== src) patch.posterSource = src;
+      if (embyHash && target.embyCoverHash !== embyHash) patch.embyCoverHash = embyHash;
       if (Object.keys(patch).length) store.updateTarget(target.id, patch);
       return { changed: false };
     }
-    const canReuse = !force && unchanged && target.needsUpload && target.coverFile;
+    const canReuse = !force && unchanged && !coverChangedExternally && target.needsUpload && target.coverFile;
     if (canReuse) png = await fs.readFile(localFile).catch(() => null);
     if (!png) {
       if (!posters.length) throw new Error('未找到任何带封面的影片');
@@ -165,6 +201,7 @@ export function createSyncService(store) {
       coverSettingsHash: settingsHash,
       coverFile: `${target.id}.png`,
       coverHash: sha1(png),
+      embyCoverHash: embyHash,
       itemCount: total,
       posterCount: posters.length,
       posterSource: posters[0]?.name || '',
@@ -174,8 +211,10 @@ export function createSyncService(store) {
     };
     try {
       await client.uploadImage(target.id, png);
+      const newEmbyHash = await embyCoverFingerprint(client, target.id);
       store.updateTarget(target.id, {
         ...basePatch,
+        embyCoverHash: newEmbyHash || embyHash,
         lastError: '',
         needsUpload: false
       });
@@ -190,7 +229,7 @@ export function createSyncService(store) {
     }
   }
 
-  async function runSync({ force = false, reason = '手动', onlyIds = null, resume = false } = {}) {
+  async function runSync({ force = false, reason = '手动', onlyIds = null, onlyKind = null, resume = false } = {}) {
     if (state.running) return { skipped: true, reason };
     state.running = true;
     state.pauseRequested = false;
@@ -220,9 +259,11 @@ export function createSyncService(store) {
         seen.add(t.id);
         const existing = store.getTarget(t.id);
         const isNew = !existing;
+        const locked = isNew ? !Boolean(settings.autoEnableNew) : existing.locked;
         store.upsertTarget({
           ...t,
-          enabled: isNew ? Boolean(settings.autoEnableNew) : existing.enabled,
+          locked,
+          enabled: !locked,
           missing: false,
           itemCount: t.kind === 'collection' ? (t.childCount ?? 0) : (existing?.itemCount ?? 0)
         });
@@ -231,8 +272,9 @@ export function createSyncService(store) {
         if (!seen.has(t.id) && !t.missing) store.updateTarget(t.id, { missing: true });
       }
       let targets = store.listTargets().filter((t) => seen.has(t.id));
-      if (onlyIds) targets = targets.filter((t) => onlyIds.includes(t.id));
-      else targets = targets.filter((t) => t.enabled);
+      if (onlyIds) targets = targets.filter((t) => onlyIds.includes(t.id) && !t.locked);
+      else targets = targets.filter((t) => !t.locked);
+      if (onlyKind) targets = targets.filter((t) => t.kind === onlyKind);
       if (!resume) state.queueTotal = targets.length;
       let updated = 0;
       let unchanged = 0;
@@ -269,9 +311,10 @@ export function createSyncService(store) {
       state.counts = { updated, unchanged, failed };
       const trig = triggerOf(reason);
       const precise = Boolean(onlyIds) && trig === 'webhook';
+      const kindLabel = onlyKind === 'library' ? '媒体库' : onlyKind === 'collection' ? '合集' : '';
       store.addTask(taskRecord({
-        name: onlyIds ? (precise ? `精准更新（${targets.length} 项）` : `批量更新（${targets.length} 项）`) : `全量同步（${targets.length} 项）`,
-        type: precise ? 'precise' : onlyIds ? 'batch' : 'sync',
+        name: onlyKind ? `按类型重新生成（${kindLabel} · ${targets.length} 项）` : (onlyIds ? (precise ? `精准更新（${targets.length} 项）` : `批量更新（${targets.length} 项）`) : `全量同步（${targets.length} 项）`),
+        type: onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync'),
         trigger: trig,
         status: state.status === 'done' ? 'success' : state.status,
         updated,
@@ -285,9 +328,10 @@ export function createSyncService(store) {
       state.status = 'failed';
       const trig = triggerOf(reason);
       const precise = Boolean(onlyIds) && trig === 'webhook';
+      const kindLabel = onlyKind === 'library' ? '媒体库' : onlyKind === 'collection' ? '合集' : '';
       store.addTask(taskRecord({
-        name: onlyIds ? (precise ? `精准更新（${onlyIds.length} 项）` : `批量更新（${onlyIds.length} 项）`) : '全量同步',
-        type: precise ? 'precise' : onlyIds ? 'batch' : 'sync',
+        name: onlyKind ? `按类型重新生成（${kindLabel}）` : (onlyIds ? (precise ? `精准更新（${onlyIds.length} 项）` : `批量更新（${onlyIds.length} 项）`) : '全量同步'),
+        type: onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync'),
         trigger: trig,
         status: 'failed',
         error: e.message
@@ -387,14 +431,17 @@ export function createSyncService(store) {
     const settings = store.settings;
     const size = overrides.size && SIZE_PRESETS[overrides.size]
       ? SIZE_PRESETS[overrides.size]
-      : (overrides.width && overrides.height ? { width: overrides.width, height: overrides.height } : resolveSize(target, settings.cover));
-    const style = isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : 'single');
+      : (overrides.width && overrides.height ? { width: overrides.width, height: overrides.height } : resolveSize(target, settings));
+    const defStyle = settings.styleByKind?.[target.kind] || 'single';
+    const style = target.kind === 'collection'
+      ? 'single'
+      : (isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single')));
     const pickBy = effectivePickBy(target, store.settings);
     const genSettings = { ...settings.cover, width: size.width, height: size.height };
     if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {
       genSettings.backgroundMode = overrides.backgroundMode;
     }
-    const { posters, total } = await collectPosters(target, client, genSettings, { pickBy });
+    const { posters, total } = await collectPosters(target, client, genSettings, { pickBy, manualItemId: target.manualItemId, need: posterNeed(style) });
     if (!posters.length) throw new Error('未找到任何带封面的影片');
     return buildCover(target, posters, genSettings, style, total);
   }

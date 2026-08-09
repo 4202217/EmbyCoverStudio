@@ -1,5 +1,6 @@
 export const STYLES = [
-  { id: 'single', name: '单图海报', desc: '根据加入/发行时间挑选一张海报展示' }
+  { id: 'single', name: '单图海报', desc: '根据加入/发行时间挑选一张海报展示' },
+  { id: 'wall3', name: '海报墙', desc: '左侧文字 + 右侧倾斜海报墙' }
 ];
 
 export const SIZE_PRESETS = {
@@ -13,8 +14,8 @@ export const DEFAULT_SIZE_BY_KIND = {
 };
 
 export function resolveSize(target, cover = {}) {
-  const def = DEFAULT_SIZE_BY_KIND[target.kind] || 'poster';
-  return SIZE_PRESETS[def];
+  // 尺寸强制：媒体库 16:9 缩略图，合集 2:3 海报
+  return SIZE_PRESETS[DEFAULT_SIZE_BY_KIND[target.kind] || 'poster'];
 }
 
 export function isValidStyle(id) {
