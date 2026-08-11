@@ -177,12 +177,12 @@ document.addEventListener('click', (e) => {
 });
 
 // 可复用的数据表格组件：支持排序、按列筛选、固定高度滚动
-function createDataTable({ el, columns, fetchData, emptyText = '暂无数据' }) {
+function createDataTable({ el, columns, fetchData, emptyText = '暂无数据', initialSort = null }) {
   const head = el.querySelector('thead');
   const body = el.querySelector('tbody');
   const state = {
     rows: [],
-    sort: { key: null, dir: 1 },
+    sort: initialSort ? { key: initialSort.key, dir: initialSort.dir } : { key: null, dir: 1 },
     filters: {}
   };
   const filterCols = columns.filter((c) => c.filterOpts);
@@ -407,6 +407,11 @@ function updateSidebar() {
     text.textContent = '正在同步…';
     return;
   }
+  if ((s.stats?.failed || 0) > 0) {
+    dot.className = 'dot red';
+    text.textContent = `${s.stats.failed} 个封面异常`;
+    return;
+  }
   if (s.emby?.connected) {
     dot.className = 'dot green';
     text.textContent = `已连接 ${s.emby.serverName || ''}`;
@@ -435,6 +440,21 @@ async function renderDashboard() {
       ? `<span class="dot red"></span> 连接失败：${esc(emby.error)}`
       : `<span class="dot gray"></span> 未配置`;
 
+  let targets = [];
+  let tasks = [];
+  try {
+    targets = (await api('/api/targets')).targets || [];
+  } catch {
+    targets = [];
+  }
+  try {
+    tasks = (await api('/api/tasks')).tasks || [];
+  } catch {
+    tasks = [];
+  }
+  const failedTargets = targets.filter((t) => t.lastError && !t.acknowledged);
+  const failedTasks = tasks.filter((t) => t.status === 'failed' && !t.acknowledged).slice(0, 5);
+
   main.innerHTML = `
     <div class="page-title">概览</div>
     <div class="page-desc">封面工坊运行状态一览</div>
@@ -442,95 +462,97 @@ async function renderDashboard() {
       <div class="card"><div class="label">Emby 服务器</div><div class="value" style="font-size:15px">${embyState}</div><div class="sub">${emby.serverName ? esc(emby.serverName) + ' v' + esc(emby.version || '') : ''}</div></div>
       <div class="card"><div class="label">监控中的合集</div><div class="value">${s.stats?.enabled ?? 0}<span style="font-size:13px;color:var(--muted)"> / ${s.stats?.targets ?? 0}</span></div><div class="sub">已生成封面 ${s.stats?.generated ?? 0} 个</div></div>
       <div class="card"><div class="label">封面生成张数</div><div class="value">${s.stats?.coversGenerated ?? 0}</div><div class="sub">累计生成（含重新生成）</div></div>
-      <div class="card"><div class="label">任务触发次数</div><div class="value">${s.stats?.taskCount ?? 0}</div><div class="sub">同步 / 更新 / 批量等</div></div>
       <div class="card"><div class="label">最近同步</div><div class="value" style="font-size:15px">${fmtTime(s.lastRun)}</div><div class="sub">${esc(s.lastReason || '')}${s.lastError ? ' · 有错误' : ''}</div></div>
       <div class="card"><div class="label">定时任务</div><div class="value" style="font-size:15px">${esc(s.cron || '—')}</div><div class="sub">${s.webhookPending ? 'Webhook 待执行' : '等待触发'}</div></div>
     </div>
-    ${s.font?.hint ? `<div class="status-line err" style="margin-bottom:14px">⚠ ${esc(s.font.hint)}（当前使用字体：${esc(s.font.fontFamily)}）</div>` : ''}
+    ${s.font?.hint ? `<div class="status-line err" style="margin-bottom:14px"><span class="ico-inline">${ICO.alert}</span>${esc(s.font.hint)}（当前使用字体：${esc(s.font.fontFamily)}）</div>` : ''}
     <div class="panel">
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
-        <h3 style="margin-bottom:0">任务记录</h3>
-        <button class="btn sm" id="btn-refresh-tasks">刷新</button>
+        <h3 style="margin-bottom:0">需要关注</h3>
+        ${failedTargets.length || failedTasks.length ? '<button class="btn sm" id="btn-ack-all">一键清除</button>' : ''}
       </div>
-      <div class="scroll-panel">
-        <table class="table" id="task-table">
-          <thead></thead>
-          <tbody><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
-        </table>
-      </div>
+      ${failedTargets.length || failedTasks.length ? `
+        ${failedTargets.length ? `
+          <div class="health-block">
+            <div class="health-title">封面生成异常（${failedTargets.length}）</div>
+            ${failedTargets.map((t) => `
+              <div class="health-row">
+                <span class="health-name">${esc(t.name)}</span>
+                <span class="badge ${t.kind === 'library' ? 'lib' : 'col'}">${t.kind === 'library' ? '媒体库' : '合集'}</span>
+                <span class="health-err" title="${esc(t.lastError)}">${esc(t.lastError)}</span>
+                <button class="btn sm primary" data-retry="${esc(t.id)}">重试</button>
+                <button class="btn sm" data-ack-target="${esc(t.id)}">已读</button>
+              </div>`).join('')}
+          </div>` : ''}
+        ${failedTasks.length ? `
+          <div class="health-block">
+            <div class="health-title">最近失败任务（${failedTasks.length}）</div>
+            ${failedTasks.map((t) => `
+              <div class="health-row">
+                <span class="health-name">${esc(t.name)}</span>
+                <span class="muted">${fmtTime(t.ts)}</span>
+                <span class="health-err" title="${esc(t.error || '')}">${esc(t.error || '未知错误')}</span>
+                <button class="btn sm" data-ack-task="${esc(t.seq)}">已读</button>
+              </div>`).join('')}
+          </div>` : ''}
+      ` : `<div class="health-ok"><span class="ico-inline">${ICO.check}</span>全部正常，无需关注</div>`}
     </div>`;
 
-  const TYPE_LABEL = { single: '单张生成', batch: '批量更新', sync: '全量同步', precise: '精准更新' };
-  const TRIGGER_LABEL = { manual: '手动', batch: '批量操作', scheduler: '定时任务', webhook: 'Webhook', startup: '服务启动', resume: '继续任务', enable: '启用合集' };
-
-  const taskTable = createDataTable({
-    el: $('#task-table'),
-    emptyText: '暂无任务记录',
-    fetchData: () => api('/api/tasks').then((r) => r.tasks || []),
-    columns: [
-      {
-        key: 'seq', label: '序号', width: '56px', sortable: true,
-        render: (t) => `<td class="muted">${t.seq ?? ''}</td>`
-      },
-      { key: 'name', label: '名称', sortable: true, render: (t) => `<td>${esc(t.name)}</td>` },
-      {
-        key: 'type', label: '类型', width: '104px', sortable: true,
-        filterOpts: Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
-        render: (t) => `<td>${esc(TYPE_LABEL[t.type] || t.type || '—')}</td>`
-      },
-      { key: 'ts', label: '时间', width: '170px', sortable: true, render: (t) => `<td class="muted" style="font-size:12px">${fmtTime(t.ts)}</td>` },
-      {
-        key: 'trigger', label: '触发方式', width: '116px', sortable: true,
-        filterOpts: Object.entries(TRIGGER_LABEL).map(([value, label]) => ({ value, label })),
-        render: (t) => {
-          const trigLabel = TRIGGER_LABEL[t.trigger] || t.trigger || '—';
-          return `<td><span class="badge trig-${esc(t.trigger || 'manual')}">${esc(trigLabel)}</span></td>`;
-        }
-      },
-      {
-        key: 'status', label: '结果', width: '124px', sortable: true,
-        filterOpts: [
-          { value: 'success', label: '成功' },
-          { value: 'failed', label: '失败' },
-          { value: 'cancelled', label: '已取消' },
-          { value: 'paused', label: '已暂停' }
-        ],
-        render: (t) => {
-          const status = t.status === 'success'
-            ? '<span class="badge ok-badge">成功</span>'
-            : t.status === 'failed'
-              ? '<span class="badge err-badge">失败</span>'
-              : t.status === 'cancelled'
-                ? '<span class="badge gray-badge">已取消</span>'
-                : '<span class="badge warn-badge">已暂停</span>';
-          const detail = [t.updated ? `更新 ${t.updated}` : '', t.unchanged ? `无变化 ${t.unchanged}` : '', t.failed ? `失败 ${t.failed}` : ''].filter(Boolean).join('，');
-          const errText = t.status === 'failed' && t.error ? `<div class="task-err" title="${esc(t.error)}">${esc(t.error)}</div>` : '';
-          return `<td>${status}${detail ? `<div class="muted" style="font-size:11px">${esc(detail)}</div>` : ''}${errText}</td>`;
-        }
-      }
-    ]
-  });
-  taskTable.render();
-
-  $('#btn-refresh-tasks').onclick = async () => {
-    const btn = $('#btn-refresh-tasks');
-    btn.disabled = true;
-    const original = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner"></span> 刷新中…';
-    try {
-      await taskTable.refresh();
-      const tb = document.querySelector('#task-table tbody');
-      if (tb) {
-        tb.classList.remove('task-flash');
-        void tb.offsetWidth; // 重置动画，保证每次点击都闪烁
-        tb.classList.add('task-flash');
-      }
-    } finally {
-      btn.innerHTML = original;
-      btn.disabled = false;
-    }
+  const ackRefresh = async () => {
+    renderDashboard();
+    loadStatus();
   };
-  await taskTable.refresh();
+  const ackBtn = $('#btn-ack-all');
+  if (ackBtn) {
+    ackBtn.onclick = async () => {
+      try {
+        await api('/api/acknowledge', { method: 'POST', body: { all: true } });
+        toast('已全部标记为已读', 'ok');
+        ackRefresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    };
+  }
+  document.querySelectorAll('[data-ack-target]').forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await api('/api/acknowledge', { method: 'POST', body: { targetId: b.dataset.ackTarget } });
+        toast('已标记为已读', 'ok');
+        ackRefresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    };
+  });
+  document.querySelectorAll('[data-ack-task]').forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await api('/api/acknowledge', { method: 'POST', body: { taskSeq: Number(b.dataset.ackTask) } });
+        toast('已标记为已读', 'ok');
+        ackRefresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    };
+  });
+
+  document.querySelectorAll('[data-retry]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      b.innerHTML = '<span class="spinner"></span>';
+      try {
+        await api(`/api/targets/${b.dataset.retry}/generate`, { method: 'POST', body: {} });
+        toast('已重新生成', 'ok');
+        renderDashboard();
+        loadStatus();
+      } catch (e) {
+        toast(e.message, 'err');
+        b.disabled = false;
+        b.textContent = '重试';
+      }
+    };
+  });
 }
 
 // ---------- 封面管理 ----------
@@ -746,7 +768,7 @@ function drawTargets() {
     const thumbStyle = t.kind === 'library' ? 'width:96px;height:54px' : 'width:56px;height:84px';
     const thumb = t.coverUrl
       ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
-      : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;font-size:22px;${thumbStyle}">🎬</div>`;
+      : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;${thumbStyle}"><span class="ico-thumb">${ICO.cover}</span></div>`;
     const pickBy = t.pickBy || targetDefaultPick(t);
     const pickLabel = pickBy === 'premiere' ? '最新发行' : pickBy === 'manual' ? '手动选择' : '最新入库';
     const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
@@ -755,7 +777,7 @@ function drawTargets() {
     const effStyle = t.kind === 'collection' ? 'single' : (t.template || state.styles?.styleByKind?.[t.kind] || 'single');
     const sourceLine = effStyle === 'single' && t.posterSource ? `<div class="meta">海报来源：${esc(t.posterSource)}</div>` : '';
     const status = t.lastError
-      ? `<div class="err">⚠ ${esc(t.lastError)}</div>`
+      ? `<div class="err"><span class="ico-inline">${ICO.alert}</span>${esc(t.lastError)}</div>`
       : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${pickLabel} · ${countText}</div>${sourceLine}`;
     const cfg = configHtml(t);
     return `
@@ -821,7 +843,7 @@ function drawTargets() {
           toast(withLock ? '配置已保存并锁定，正在更新封面…' : '配置有修改，正在更新封面…', 'info');
           try {
             await api(`/api/targets/${id}/generate`, { method: 'POST', body: {} });
-            toast(withLock ? '封面已按新配置生成并锁定 ✅' : '封面已按新配置更新 ✅', 'ok');
+            toast(withLock ? '封面已按新配置生成并锁定' : '封面已按新配置更新', 'ok');
           } catch (e) {
             toast(`配置已保存，但封面更新失败：${e.message}`, 'err');
           }
@@ -883,7 +905,7 @@ function drawTargets() {
       el.innerHTML = '<span class="spinner"></span>';
       try {
         const r = await api(`/api/targets/${el.dataset.id}/generate`, { method: 'POST', body: {} });
-        toast('封面已重新生成并上传 ✅', 'ok');
+        toast('封面已重新生成并上传', 'ok');
         refreshTargets();
       } catch (e) {
         toast(e.message, 'err');
@@ -1036,9 +1058,10 @@ function showSyncProgress() {
       box.dataset.done = '1';
       clearInterval(syncTimer);
       syncTimer = null;
-      if (s.status === 'done') text.textContent = `${lines}\n全部完成 ✅`;
+      if (s.status === 'done') text.textContent = `${lines}\n全部完成`;
       if (s.status === 'cancelled') text.textContent = `${lines}\n任务已取消`;
       if (s.status === 'failed') text.textContent = `${lines}\n任务失败`;
+      if (s.failed > 0) toast(`有 ${s.failed} 个封面生成失败，请到概览查看`, 'err');
       pauseBtn.style.display = 'none';
       cancelBtn.style.display = 'none';
       refreshTargets();
@@ -1099,7 +1122,7 @@ function showPreview(id) {
     try {
       await api(`/api/targets/${encodeURIComponent(id)}/generate`, { method: 'POST', body: {} });
       closeModal();
-      toast('封面已更新并上传 ✅', 'ok');
+      toast('封面已更新并上传', 'ok');
       refreshTargets();
     } catch (e) {
       toast(e.message, 'err');
@@ -1587,9 +1610,9 @@ async function renderSettings() {
         webhookTestTimer = null;
         btn.disabled = false;
         el.className = 'status-line ok';
-        el.textContent = `已收到测试通知 ✅ 事件：${t.result.event} · ${fmtTime(t.result.at)}`;
+        el.textContent = `已收到测试通知（事件：${t.result.event} · ${fmtTime(t.result.at)}）`;
         updateWebhookLast(st.webhook);
-        toast('已收到 Emby 测试通知 ✅', 'ok');
+        toast('已收到 Emby 测试通知', 'ok');
         return;
       }
       if (waited >= 60000) {
@@ -1780,17 +1803,76 @@ async function renderSettings() {
 // ---------- 日志 ----------
 async function renderLogs() {
   main.innerHTML = `
-    <div class="page-title">运行日志</div>
-    <div class="page-desc">最近的同步与 Webhook 记录（最多保留 500 条）</div>
-    <div class="row mb">
-      <button class="btn sm" id="btn-refresh-logs">刷新</button>
-      <span class="muted" id="log-count"></span>
+    <div class="page-title">运行记录</div>
+    <div class="page-desc">任务记录与系统日志，供需要时排查</div>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h3 style="margin-bottom:0">任务记录</h3>
+        <button class="btn sm" id="btn-refresh-tasks">刷新</button>
+      </div>
+      <div class="scroll-panel">
+        <table class="table" id="task-table"><thead></thead><tbody><tr><td colspan="6" class="empty">加载中…</td></tr></tbody></table>
+      </div>
     </div>
     <div class="panel" style="padding:10px 14px">
-      <div class="scroll-panel" style="max-height:520px">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h3 style="margin-bottom:0">运行日志</h3>
+        <div class="row" style="gap:10px">
+          <span class="muted" id="log-count"></span>
+          <button class="btn sm" id="btn-refresh-logs">刷新</button>
+        </div>
+      </div>
+      <div class="scroll-panel" style="max-height:460px">
         <table class="table" id="log-table"><thead></thead><tbody><tr><td colspan="3" class="empty">加载中…</td></tr></tbody></table>
       </div>
     </div>`;
+
+  const TYPE_LABEL = { single: '单张生成', batch: '批量更新', sync: '全量同步', precise: '精准更新' };
+  const TRIGGER_LABEL = { manual: '手动', batch: '批量操作', scheduler: '定时任务', webhook: 'Webhook', startup: '服务启动', resume: '继续任务', enable: '启用合集' };
+
+  const taskTable = createDataTable({
+    el: $('#task-table'),
+    emptyText: '暂无任务记录',
+    fetchData: () => api('/api/tasks').then((r) => r.tasks || []),
+    initialSort: { key: 'seq', dir: -1 },
+    columns: [
+      { key: 'seq', label: '序号', width: '56px', sortable: true, render: (t) => `<td class="muted">${t.seq ?? ''}</td>` },
+      { key: 'name', label: '名称', sortable: true, render: (t) => `<td>${esc(t.name)}</td>` },
+      {
+        key: 'type', label: '类型', width: '104px', sortable: true,
+        filterOpts: Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
+        render: (t) => `<td>${esc(TYPE_LABEL[t.type] || t.type || '—')}</td>`
+      },
+      { key: 'ts', label: '时间', width: '170px', sortable: true, render: (t) => `<td class="muted" style="font-size:12px">${fmtTime(t.ts)}</td>` },
+      {
+        key: 'trigger', label: '触发方式', width: '116px', sortable: true,
+        filterOpts: Object.entries(TRIGGER_LABEL).map(([value, label]) => ({ value, label })),
+        render: (t) => `<td><span class="badge trig-${esc(t.trigger || 'manual')}">${esc(TRIGGER_LABEL[t.trigger] || t.trigger || '—')}</span></td>`
+      },
+      {
+        key: 'status', label: '结果', width: '124px', sortable: true,
+        filterOpts: [
+          { value: 'success', label: '成功' },
+          { value: 'failed', label: '失败' },
+          { value: 'cancelled', label: '已取消' },
+          { value: 'paused', label: '已暂停' }
+        ],
+        render: (t) => {
+          const status = t.status === 'success'
+            ? '<span class="badge ok-badge">成功</span>'
+            : t.status === 'failed'
+              ? '<span class="badge err-badge">失败</span>'
+              : t.status === 'cancelled'
+                ? '<span class="badge gray-badge">已取消</span>'
+                : '<span class="badge warn-badge">已暂停</span>';
+          const detail = [t.updated ? `更新 ${t.updated}` : '', t.unchanged ? `无变化 ${t.unchanged}` : '', t.failed ? `失败 ${t.failed}` : ''].filter(Boolean).join('，');
+          const errText = t.status === 'failed' && t.error ? `<div class="task-err" title="${esc(t.error)}">${esc(t.error)}</div>` : '';
+          return `<td>${status}${detail ? `<div class="muted" style="font-size:11px">${esc(detail)}</div>` : ''}${errText}</td>`;
+        }
+      }
+    ]
+  });
+  taskTable.render();
 
   const logTable = createDataTable({
     el: $('#log-table'),
@@ -1800,6 +1882,7 @@ async function renderLogs() {
       $('#log-count').textContent = `共 ${state.logs.length} 条`;
       return state.logs;
     }),
+    initialSort: { key: 'ts', dir: -1 },
     columns: [
       { key: 'ts', label: '时间', width: '170px', sortable: true, render: (l) => `<td class="muted" style="font-size:12px">${fmtTime(l.ts)}</td>` },
       {
@@ -1815,7 +1898,9 @@ async function renderLogs() {
     ]
   });
   logTable.render();
+  $('#btn-refresh-tasks').onclick = () => taskTable.refresh();
   $('#btn-refresh-logs').onclick = () => logTable.refresh();
+  await taskTable.refresh();
   await logTable.refresh();
 }
 

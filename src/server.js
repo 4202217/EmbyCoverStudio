@@ -152,7 +152,7 @@ export async function createApp(options = {}) {
         enabled: targets.filter((t) => !t.locked).length,
         generated: targets.filter((t) => t.coverFile).length,
         missing: targets.filter((t) => t.missing).length,
-        failed: targets.filter((t) => t.lastError).length,
+        failed: targets.filter((t) => t.lastError && !store.isAcknowledgedTarget(t.id)).length,
         coversGenerated: tasks.reduce((sum, t) => sum + (t.updated || 0), 0),
         taskCount: tasks.length
       },
@@ -252,7 +252,8 @@ export async function createApp(options = {}) {
   route('GET', '/api/targets', (req, res) => {
     const list = store.listTargets().map((t) => ({
       ...t,
-      coverUrl: t.coverFile ? `/api/covers/${encodeURIComponent(t.coverFile)}` : ''
+      coverUrl: t.coverFile ? `/api/covers/${encodeURIComponent(t.coverFile)}` : '',
+      acknowledged: store.isAcknowledgedTarget(t.id)
     }));
     sendJson(res, 200, { ok: true, targets: list });
   });
@@ -507,7 +508,38 @@ export async function createApp(options = {}) {
   });
 
   route('GET', '/api/tasks', (req, res) => {
-    sendJson(res, 200, { ok: true, tasks: store.listTasks() });
+    sendJson(res, 200, {
+      ok: true,
+      tasks: store.listTasks().map((t) => ({ ...t, acknowledged: store.isAcknowledgedTask(t.seq) }))
+    });
+  });
+
+  route('POST', '/api/acknowledge', async (req, res) => {
+    const body = await readJson(req);
+    if (body.all) {
+      const failedTargets = store.listTargets()
+        .filter((t) => t.lastError && !store.isAcknowledgedTarget(t.id))
+        .map((t) => t.id);
+      const failedTasks = store.data.tasks
+        .filter((t) => t.status === 'failed' && !store.isAcknowledgedTask(t.seq))
+        .slice(-5)
+        .map((t) => t.seq);
+      store.acknowledgeTargets(failedTargets);
+      store.acknowledgeTasks(failedTasks);
+      sendJson(res, 200, { ok: true, targets: failedTargets.length, tasks: failedTasks.length });
+      return;
+    }
+    if (body.targetId) {
+      store.acknowledgeTargets([String(body.targetId)]);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    if (body.taskSeq !== undefined) {
+      store.acknowledgeTasks([String(body.taskSeq)]);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    sendJson(res, 400, { error: '缺少参数' });
   });
 
   route('GET', '/api/webhook/url', (req, res) => {

@@ -457,6 +457,38 @@ input[type="color"] {
 .thf-sort.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .thf-sep { height: 1px; background: var(--border); margin: 6px 0; }
 .task-err { color: var(--err); font-size: 11px; margin-top: 2px; line-height: 1.4; }
+.health-block { margin-bottom: 14px; }
+.health-block:last-child { margin-bottom: 0; }
+.health-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+.health-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: var(--panel-2);
+}
+.health-row:last-child { margin-bottom: 0; }
+.health-name { font-weight: 600; font-size: 13px; flex-shrink: 0; }
+.health-row .badge { flex-shrink: 0; }
+.health-err {
+  flex: 1;
+  min-width: 0;
+  color: var(--err);
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.health-row .btn { flex-shrink: 0; }
+.health-ok { color: var(--ok); font-size: 14px; padding: 8px 0; }
+.ico-inline { display: inline-flex; width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
+.ico-inline svg { width: 14px; height: 14px; }
+.ico-thumb { width: 24px; height: 24px; opacity: 0.5; }
+.ico-thumb svg { width: 24px; height: 24px; }
 .task-flash { animation: task-flash 0.6s ease; }
 @keyframes task-flash {
   0% { background: rgba(0, 164, 220, 0.1); }

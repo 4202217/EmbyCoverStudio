@@ -202,6 +202,7 @@ export class Store {
     const fresh = {
       settings: defaultSettings(),
       targets: {},
+      acknowledged: { targets: {}, tasks: {} },
       logs: [],
       tasks: []
     };
@@ -332,8 +333,28 @@ export class Store {
     const target = this.getTarget(id);
     if (!target) return null;
     Object.assign(target, patch);
+    // 错误状态发生变化（清除或变为新错误）时，重置该目标的已读标记
+    if ('lastError' in patch) delete this.data.acknowledged.targets[String(id)];
     this.save();
     return target;
+  }
+
+  acknowledgeTargets(ids) {
+    for (const id of ids) this.data.acknowledged.targets[String(id)] = Date.now();
+    this.save();
+  }
+
+  acknowledgeTasks(seqs) {
+    for (const s of seqs) this.data.acknowledged.tasks[String(s)] = Date.now();
+    this.save();
+  }
+
+  isAcknowledgedTarget(id) {
+    return Boolean(this.data.acknowledged.targets[String(id)]);
+  }
+
+  isAcknowledgedTask(seq) {
+    return Boolean(this.data.acknowledged.tasks[String(seq)]);
   }
 
   deleteTarget(id) {
