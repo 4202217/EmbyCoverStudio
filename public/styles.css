@@ -98,7 +98,6 @@ body {
 .changelog p { margin: 4px 0; }
 .changelog code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 .changelog strong { color: var(--text); }
-}
 .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .dot.green { background: var(--ok); }
 .dot.gray { background: #5a6a84; }

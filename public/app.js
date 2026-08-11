@@ -1493,6 +1493,41 @@ async function renderSettings() {
         <span class="status-line" id="backup-result"></span>
       </div>
       <p class="hint" style="margin-top:8px">备份包含当前设置（含 Emby API 密钥与访问令牌，请妥善保管）、全部媒体库/合集配置和任务记录；封面图片不包含在内，导入后重新生成即可。</p>
+      <h4 style="margin:16px 0 10px;font-size:14px">WebDAV 同步</h4>
+      <div class="grid-2">
+        <label class="field"><span class="lab">WebDAV 地址</span>
+          <input type="url" id="set-webdavUrl" value="${esc(s.webdavUrl || '')}" placeholder="https://dav.example.com/dav/emby-cover-studio">
+        </label>
+        <label class="field"><span class="lab">用户名</span>
+          <input type="text" id="set-webdavUser" value="${esc(s.webdavUser || '')}" autocomplete="off">
+        </label>
+        <label class="field"><span class="lab">密码</span>
+          <input type="password" id="set-webdavPassword" value="${esc(s.webdavPassword || '')}" autocomplete="off">
+        </label>
+        <label class="field"><span class="lab">备份文件名</span>
+          <input type="text" id="set-webdavFile" value="${esc(s.webdavFile || 'backup.json')}">
+        </label>
+      </div>
+      <div class="row" style="gap:18px;margin-top:8px;flex-wrap:wrap">
+        <label class="row" style="gap:6px"><input type="checkbox" id="set-webdavAuto" ${s.webdavAutoBackup ? 'checked' : ''}> 自动备份</label>
+        <label class="field" style="max-width:140px"><span class="lab">间隔（小时）</span>
+          <input type="number" id="set-webdavInterval" value="${s.webdavIntervalHours ?? 24}" min="1" max="720">
+        </label>
+      </div>
+      <div class="row" style="gap:18px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <span class="muted" style="font-size:12px">同步内容：</span>
+        <label class="row" style="gap:6px"><input type="checkbox" id="set-webdavSyncSettings" ${s.webdavSync?.settings !== false ? 'checked' : ''}> 设置（含密钥）</label>
+        <label class="row" style="gap:6px"><input type="checkbox" id="set-webdavSyncTargets" ${s.webdavSync?.targets !== false ? 'checked' : ''}> 媒体库/合集配置</label>
+        <label class="row" style="gap:6px"><input type="checkbox" id="set-webdavSyncTasks" ${s.webdavSync?.tasks !== false ? 'checked' : ''}> 任务记录</label>
+      </div>
+      <div class="row mt" style="gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn" id="btn-webdav-save">保存设置</button>
+        <button class="btn" id="btn-webdav-test">测试连接</button>
+        <button class="btn primary" id="btn-webdav-backup">立即备份</button>
+        <button class="btn" id="btn-webdav-restore">从 WebDAV 恢复</button>
+        <span class="status-line" id="webdav-result"></span>
+      </div>
+      <p class="hint" style="margin-top:8px">上次备份：<span id="webdav-last">—</span>。备份包含 Emby 密钥与访问令牌，建议使用 HTTPS 地址。</p>
     </div>
 
     <div class="panel">
@@ -1899,7 +1934,7 @@ async function renderSettings() {
     try {
       const r = await api('/api/import', { method: 'POST', body: { data } });
       el.className = 'status-line ok';
-      el.textContent = `导入成功 ✅（${r.importedTargets} 个媒体库/合集）`;
+      el.textContent = `导入成功（${r.importedTargets} 个媒体库/合集）`;
       toast('导入成功，正在刷新…', 'ok');
       e.target.value = '';
       renderSettings();
@@ -1908,6 +1943,89 @@ async function renderSettings() {
       el.className = 'status-line err';
       el.textContent = `导入失败：${err.message}`;
       e.target.value = '';
+    }
+  };
+
+  const webdavEl = $('#webdav-result');
+  const webdavStatus = (cls, text) => {
+    webdavEl.className = `status-line ${cls}`;
+    webdavEl.textContent = text;
+  };
+  function webdavBody() {
+    return {
+      webdavUrl: $('#set-webdavUrl').value.trim(),
+      webdavUser: $('#set-webdavUser').value.trim(),
+      webdavPassword: $('#set-webdavPassword').value,
+      webdavFile: $('#set-webdavFile').value.trim() || 'backup.json',
+      webdavAutoBackup: $('#set-webdavAuto').checked,
+      webdavIntervalHours: Number($('#set-webdavInterval').value) || 24,
+      webdavSync: {
+        settings: $('#set-webdavSyncSettings').checked,
+        targets: $('#set-webdavSyncTargets').checked,
+        tasks: $('#set-webdavSyncTasks').checked
+      }
+    };
+  }
+  function updateWebdavLast() {
+    const el = document.getElementById('webdav-last');
+    if (el) el.textContent = state.settings?.webdavLastBackup ? fmtTime(state.settings.webdavLastBackup) : '从未备份';
+  }
+  updateWebdavLast();
+
+  const saveWebdavSettings = async () => {
+    const r = await api('/api/settings', { method: 'PUT', body: webdavBody() });
+    state.settings = r.settings;
+    return r.settings;
+  };
+
+  $('#btn-webdav-save').onclick = async () => {
+    try {
+      await saveWebdavSettings();
+      webdavStatus('ok', 'WebDAV 设置已保存');
+      toast('WebDAV 设置已保存', 'ok');
+    } catch (e) {
+      webdavStatus('err', `保存失败：${e.message}`);
+    }
+  };
+
+  $('#btn-webdav-test').onclick = async () => {
+    webdavStatus('', '测试中…');
+    try {
+      await saveWebdavSettings();
+      await api('/api/webdav/test', { method: 'POST', body: {} });
+      webdavStatus('ok', '连接正常');
+      toast('WebDAV 连接正常', 'ok');
+    } catch (e) {
+      webdavStatus('err', `连接失败：${e.message}`);
+    }
+  };
+
+  $('#btn-webdav-backup').onclick = async () => {
+    webdavStatus('', '正在备份…');
+    try {
+      await saveWebdavSettings();
+      const r = await api('/api/webdav/backup', { method: 'POST', body: {} });
+      if (state.settings) state.settings.webdavLastBackup = new Date().toISOString();
+      updateWebdavLast();
+      webdavStatus('ok', `已备份到 ${r.url}`);
+      toast('WebDAV 备份完成', 'ok');
+    } catch (e) {
+      webdavStatus('err', `备份失败：${e.message}`);
+    }
+  };
+
+  $('#btn-webdav-restore').onclick = async () => {
+    if (!window.confirm('将从 WebDAV 下载备份并覆盖当前全部配置与数据（设置、媒体库/合集、任务记录），确定继续吗？')) return;
+    webdavStatus('', '正在从 WebDAV 恢复…');
+    try {
+      await saveWebdavSettings();
+      const r = await api('/api/webdav/restore', { method: 'POST', body: {} });
+      webdavStatus('ok', `已恢复（${r.importedTargets} 个媒体库/合集）`);
+      toast('已从 WebDAV 恢复备份', 'ok');
+      renderSettings();
+      loadStatus();
+    } catch (e) {
+      webdavStatus('err', `恢复失败：${e.message}`);
     }
   };
 
