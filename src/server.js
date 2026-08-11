@@ -15,6 +15,7 @@ import { createSyncService } from './services/sync.js';
 import { createWebhookService } from './services/webhook.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PKG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -139,6 +140,7 @@ export async function createApp(options = {}) {
     sendJson(res, 200, {
       ok: true,
       time: new Date().toISOString(),
+      version: PKG.version || '0.0.0',
       running: s.running,
       lastRun: s.lastRun,
       lastReason: s.lastReason,
@@ -191,6 +193,17 @@ export async function createApp(options = {}) {
       targets: store.listTargets(),
       tasks: store.data.tasks
     });
+  });
+
+  route('GET', '/api/changelog', (req, res) => {
+    const file = path.join(__dirname, '..', 'CHANGELOG.md');
+    let text = '';
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch {
+      text = '暂无更新记录';
+    }
+    sendJson(res, 200, { ok: true, text });
   });
 
   route('POST', '/api/import', async (req, res) => {

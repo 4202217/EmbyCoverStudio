@@ -23,7 +23,9 @@ window.addEventListener('popstate', () => {
 
 const state = {
   page: currentPage(),
-  filter: 'all',
+  filters: { type: 'all', status: 'all', cfg: 'all', cover: 'all' },
+  taskSort: { key: 'seq', dir: -1 },
+  taskFilter: { type: [], trigger: [], status: [] },
   settings: null,
   status: null,
   targets: [],
@@ -109,6 +111,235 @@ window.closeModal = () => {
   $('#modal-root').innerHTML = '';
 };
 
+const ICO = {
+  search: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>',
+  grid: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></svg>',
+  layer: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2l6 3-6 3-6-3z"/><path d="M2 8.5l6 3 6-3"/></svg>',
+  folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2 4.5h4l1.5 2H14v7H2z"/></svg>',
+  status: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/></svg>',
+  check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5.5 8.2l1.8 1.8 3.2-3.6"/></svg>',
+  lock: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="4.5" y="7" width="7" height="5.5" rx="1"/><path d="M6 7V5.5a2 2 0 014 0V7"/></svg>',
+  cfg: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6.5" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/><circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
+  doc: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="3" y="2.5" width="10" height="11" rx="1.2"/><path d="M6 6h4M6 9h4"/></svg>',
+  pencil: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3 12.5l.7-2.3 6.8-6.8a1.4 1.4 0 012 2l-6.8 6.8-2.3.7z"/><path d="M9.5 4.5l2 2"/></svg>',
+  cover: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="7" r="1.3"/><path d="M3 13l3.5-3.5 2.5 2.5 2-2 2.5 2.5"/></svg>',
+  alert: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.5L14.5 13h-13z"/><path d="M8 6.5v3"/><circle cx="8" cy="11.2" r="0.8" fill="currentColor" stroke="none"/></svg>',
+  funnel: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 3h11l-4 4.5V13l-3-1.5V7.5z"/></svg>',
+  clear: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  chevron: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
+};
+
+function closeFilterMenus() {
+  document.querySelectorAll('.fdrop-menu:not([hidden]), .thf-pop:not([hidden])').forEach((m) => {
+    m.hidden = true;
+  });
+}
+
+function buildFilterDropdown(container, { icon, options, value, onChange }) {
+  const cur = options.find((o) => o.value === value) || options[0];
+  container.classList.add('fdrop');
+  container.innerHTML = `
+    <button class="fdrop-trigger" type="button">
+      <span class="fdrop-ico">${icon}</span>
+      <span class="fdrop-label">${cur.label}</span>
+      <span class="fchev">${ICO.chevron}</span>
+    </button>
+    <div class="fdrop-menu" hidden>
+      ${options.map((o) => `<button class="fdrop-opt${o.value === value ? ' active' : ''}" type="button" data-v="${o.value}">${o.icon || icon}<span>${o.label}</span></button>`).join('')}
+    </div>`;
+  const trigger = container.querySelector('.fdrop-trigger');
+  const menu = container.querySelector('.fdrop-menu');
+  const label = container.querySelector('.fdrop-label');
+  function setValue(v, silent = false) {
+    const o = options.find((x) => x.value === v);
+    if (!o) return;
+    label.textContent = o.label;
+    menu.querySelectorAll('.fdrop-opt').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
+    if (!silent) onChange(v);
+  }
+  trigger.onclick = (e) => {
+    e.stopPropagation();
+    if (menu.hidden) closeFilterMenus();
+    menu.hidden = !menu.hidden;
+  };
+  menu.querySelectorAll('.fdrop-opt').forEach((b) => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      setValue(b.dataset.v);
+      menu.hidden = true;
+    };
+  });
+  return { setValue };
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.fdrop') && !e.target.closest('.thf-pop')) closeFilterMenus();
+});
+
+// 可复用的数据表格组件：支持排序、按列筛选、固定高度滚动
+function createDataTable({ el, columns, fetchData, emptyText = '暂无数据' }) {
+  const head = el.querySelector('thead');
+  const body = el.querySelector('tbody');
+  const state = {
+    rows: [],
+    sort: { key: null, dir: 1 },
+    filters: {}
+  };
+  const filterCols = columns.filter((c) => c.filterOpts);
+
+  function matches(row, key, vals) {
+    if (!vals || !vals.length) return true;
+    return vals.includes(String(row[key] ?? ''));
+  }
+
+  function compare(a, b, key) {
+    const va = a[key];
+    const vb = b[key];
+    if (key === 'ts') return new Date(va || 0).getTime() - new Date(vb || 0).getTime();
+    if (typeof va === 'number' && typeof vb === 'number') return va - vb;
+    return String(va ?? '').localeCompare(String(vb ?? ''), 'zh-CN');
+  }
+
+  function visibleRows() {
+    let rows = state.rows.filter((r) => filterCols.every((c) => matches(r, c.key, state.filters[c.key])));
+    if (state.sort.key) {
+      const dir = state.sort.dir;
+      rows = [...rows].sort((a, b) => compare(a, b, state.sort.key) * dir);
+    }
+    return rows;
+  }
+
+  let popup = null;
+  function ensurePopup() {
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.className = 'thf-pop';
+      popup.hidden = true;
+      document.body.appendChild(popup);
+      // 弹层内部任意点击都不再向外冒泡，避免被全局点击监听误关
+      popup.addEventListener('click', (e) => e.stopPropagation());
+    }
+    return popup;
+  }
+
+  function openFilterMenu(key, anchor) {
+    ensurePopup();
+    closeFilterMenus();
+    buildThfMenu(popup, key);
+    popup.hidden = false;
+    const pw = popup.offsetWidth || 190;
+    const ph = popup.offsetHeight || 260;
+    const rect = anchor.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.bottom + 4;
+    if (left + pw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pw - 8);
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 4);
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+    const sc = el.closest('.scroll-panel');
+    if (sc) sc.addEventListener('scroll', () => { popup.hidden = true; }, { once: true, passive: true });
+  }
+
+  function buildThfMenu(menu, key) {
+    const col = columns.find((c) => c.key === key);
+    const opts = col.filterOpts;
+    const pending = [...(state.filters[key] || [])];
+    menu.dataset.pending = JSON.stringify(pending);
+    const curSort = state.sort.key === key ? state.sort.dir : 0;
+    menu.innerHTML = `
+      <div class="thf-sorts">
+        <button class="thf-sort ${curSort === 1 ? 'active' : ''}" data-dir="1">▲ 升序</button>
+        <button class="thf-sort ${curSort === -1 ? 'active' : ''}" data-dir="-1">▼ 降序</button>
+      </div>
+      <div class="thf-sep"></div>
+      <label class="thf-row"><input type="checkbox" data-all="1" ${pending.length === 0 ? 'checked' : ''}> 全选</label>
+      ${opts.map((o) => `<label class="thf-row"><input type="checkbox" data-val="${o.value}" ${pending.includes(o.value) ? 'checked' : ''}> ${o.label}</label>`).join('')}
+      <div class="thf-actions">
+        <button class="btn sm ghost" data-clear="1">清空筛选</button>
+      </div>`;
+    menu.querySelectorAll('.thf-sort').forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        state.sort = { key, dir: Number(b.dataset.dir) };
+        renderHead();
+        renderBody();
+        menu.hidden = true;
+      };
+    });
+    menu.querySelectorAll('input').forEach((inp) => {
+      inp.onchange = () => {
+        let p = JSON.parse(menu.dataset.pending || '[]');
+        if (inp.dataset.all !== undefined) {
+          p = inp.checked ? [] : opts.map((o) => o.value);
+        } else {
+          const v = inp.dataset.val;
+          p = inp.checked ? (p.includes(v) ? p : [...p, v]) : p.filter((x) => x !== v);
+        }
+        menu.dataset.pending = JSON.stringify(p);
+        state.filters[key] = p;
+        renderBody();
+        buildThfMenu(menu, key);
+      };
+    });
+    menu.querySelector('[data-clear="1"]').onclick = () => {
+      state.filters[key] = [];
+      renderBody();
+      buildThfMenu(menu, key);
+    };
+  }
+
+  function renderHead() {
+    head.innerHTML = '<tr>' + columns.map((c) => {
+      const arrow = state.sort.key === c.key ? (state.sort.dir === 1 ? '▲' : '▼') : '';
+      const sortBtn = c.sortable
+        ? `<button class="th-sort" data-sort="${c.key}" ${c.filterOpts ? `data-filter="${c.key}"` : ''}>${c.label}${arrow ? `<span class="sort-arrow">${arrow}</span>` : ''}${c.filterOpts ? `<span class="th-filter-ico">${ICO.funnel}</span>` : ''}</button>`
+        : c.label;
+      return `<th style="width:${c.width || 'auto'}">${sortBtn}</th>`;
+    }).join('') + '</tr>';
+    head.querySelectorAll('.th-sort').forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const key = b.dataset.sort;
+        if (b.dataset.filter !== undefined) {
+          openFilterMenu(key, b);
+          return;
+        }
+        if (state.sort.key === key) {
+          state.sort.dir = state.sort.dir === 1 ? -1 : 1;
+        } else {
+          state.sort = { key, dir: key === 'seq' || key === 'ts' ? -1 : 1 };
+        }
+        renderHead();
+        renderBody();
+      };
+    });
+  }
+
+  function renderBody() {
+    const rows = visibleRows();
+    body.innerHTML = rows.map((r) => `<tr>${columns.map((c) => c.render(r)).join('')}</tr>`).join('')
+      || `<tr><td colspan="${columns.length}" class="empty">${emptyText}</td></tr>`;
+  }
+
+  async function refresh() {
+    try {
+      state.rows = (await fetchData()) || [];
+    } catch {
+      body.innerHTML = `<tr><td colspan="${columns.length}" class="empty">加载失败</td></tr>`;
+      return;
+    }
+    renderBody();
+  }
+
+  return {
+    refresh,
+    render() {
+      renderHead();
+      renderBody();
+    }
+  };
+}
+
 function openModal(html) {
   $('#modal-root').innerHTML = `<div class="mask"><div class="modal">${html}</div></div>`;
   $('#modal-root .mask').onclick = (e) => {
@@ -148,6 +379,24 @@ function updateSidebar() {
   const s = state.status;
   const dot = $('#side-dot');
   const text = $('#side-text');
+  const ver = $('#app-version');
+  if (ver) ver.textContent = s?.version ? `v${s.version}` : '';
+  if (ver && !ver.dataset.bound) {
+    ver.dataset.bound = '1';
+    ver.onclick = async (e) => {
+      e.preventDefault();
+      let text = '暂无更新记录';
+      try {
+        text = (await api('/api/changelog')).text;
+      } catch {
+        text = '暂无更新记录';
+      }
+      openModal(`
+        <div class="modal-head"><h3>更新记录</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+        <pre class="changelog">${esc(text)}</pre>
+      `);
+    };
+  }
   if (!s) {
     dot.className = 'dot red';
     text.textContent = '服务不可用';
@@ -203,47 +452,65 @@ async function renderDashboard() {
         <h3 style="margin-bottom:0">任务记录</h3>
         <button class="btn sm" id="btn-refresh-tasks">刷新</button>
       </div>
-      <table class="table">
-        <thead><tr><th style="width:56px">序号</th><th>名称</th><th style="width:88px">类型</th><th style="width:170px">时间</th><th style="width:96px">触发方式</th><th style="width:110px">结果</th></tr></thead>
-        <tbody id="task-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
-      </table>
+      <div class="scroll-panel">
+        <table class="table" id="task-table">
+          <thead></thead>
+          <tbody><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
     </div>`;
 
   const TYPE_LABEL = { single: '单张生成', batch: '批量更新', sync: '全量同步', precise: '精准更新' };
   const TRIGGER_LABEL = { manual: '手动', batch: '批量操作', scheduler: '定时任务', webhook: 'Webhook', startup: '服务启动', resume: '继续任务', enable: '启用合集' };
 
-  async function drawTasks() {
-    const tb = $('#task-body');
-    if (!tb) return;
-    let tasks = [];
-    try {
-      tasks = (await api('/api/tasks')).tasks || [];
-    } catch {
-      tb.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>';
-      return;
-    }
-    tb.innerHTML = tasks.map((t, i) => {
-      const status = t.status === 'success'
-        ? '<span class="badge ok-badge">成功</span>'
-        : t.status === 'failed'
-          ? '<span class="badge err-badge">失败</span>'
-          : t.status === 'cancelled'
-            ? '<span class="badge gray-badge">已取消</span>'
-            : '<span class="badge warn-badge">已暂停</span>';
-      const detail = [t.updated ? `更新 ${t.updated}` : '', t.unchanged ? `无变化 ${t.unchanged}` : '', t.failed ? `失败 ${t.failed}` : ''].filter(Boolean).join('，');
-      const errText = t.status === 'failed' && t.error ? `<div class="task-err" title="${esc(t.error)}">${esc(t.error)}</div>` : '';
-      const trigLabel = TRIGGER_LABEL[t.trigger] || t.trigger || '—';
-      return `
-        <tr>
-          <td class="muted">${t.seq ?? (i + 1)}</td>
-          <td>${esc(t.name)}</td>
-          <td>${esc(TYPE_LABEL[t.type] || t.type || '—')}</td>
-          <td class="muted" style="font-size:12px">${fmtTime(t.ts)}</td>
-          <td><span class="badge trig-${esc(t.trigger || 'manual')}">${esc(trigLabel)}</span></td>
-          <td>${status}${detail ? `<div class="muted" style="font-size:11px">${esc(detail)}</div>` : ''}${errText}</td>
-        </tr>`;
-    }).join('') || '<tr><td colspan="6" class="empty">暂无任务记录</td></tr>';
-  }
+  const taskTable = createDataTable({
+    el: $('#task-table'),
+    emptyText: '暂无任务记录',
+    fetchData: () => api('/api/tasks').then((r) => r.tasks || []),
+    columns: [
+      {
+        key: 'seq', label: '序号', width: '56px', sortable: true,
+        render: (t) => `<td class="muted">${t.seq ?? ''}</td>`
+      },
+      { key: 'name', label: '名称', sortable: true, render: (t) => `<td>${esc(t.name)}</td>` },
+      {
+        key: 'type', label: '类型', width: '104px', sortable: true,
+        filterOpts: Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
+        render: (t) => `<td>${esc(TYPE_LABEL[t.type] || t.type || '—')}</td>`
+      },
+      { key: 'ts', label: '时间', width: '170px', sortable: true, render: (t) => `<td class="muted" style="font-size:12px">${fmtTime(t.ts)}</td>` },
+      {
+        key: 'trigger', label: '触发方式', width: '116px', sortable: true,
+        filterOpts: Object.entries(TRIGGER_LABEL).map(([value, label]) => ({ value, label })),
+        render: (t) => {
+          const trigLabel = TRIGGER_LABEL[t.trigger] || t.trigger || '—';
+          return `<td><span class="badge trig-${esc(t.trigger || 'manual')}">${esc(trigLabel)}</span></td>`;
+        }
+      },
+      {
+        key: 'status', label: '结果', width: '124px', sortable: true,
+        filterOpts: [
+          { value: 'success', label: '成功' },
+          { value: 'failed', label: '失败' },
+          { value: 'cancelled', label: '已取消' },
+          { value: 'paused', label: '已暂停' }
+        ],
+        render: (t) => {
+          const status = t.status === 'success'
+            ? '<span class="badge ok-badge">成功</span>'
+            : t.status === 'failed'
+              ? '<span class="badge err-badge">失败</span>'
+              : t.status === 'cancelled'
+                ? '<span class="badge gray-badge">已取消</span>'
+                : '<span class="badge warn-badge">已暂停</span>';
+          const detail = [t.updated ? `更新 ${t.updated}` : '', t.unchanged ? `无变化 ${t.unchanged}` : '', t.failed ? `失败 ${t.failed}` : ''].filter(Boolean).join('，');
+          const errText = t.status === 'failed' && t.error ? `<div class="task-err" title="${esc(t.error)}">${esc(t.error)}</div>` : '';
+          return `<td>${status}${detail ? `<div class="muted" style="font-size:11px">${esc(detail)}</div>` : ''}${errText}</td>`;
+        }
+      }
+    ]
+  });
+  taskTable.render();
 
   $('#btn-refresh-tasks').onclick = async () => {
     const btn = $('#btn-refresh-tasks');
@@ -251,8 +518,8 @@ async function renderDashboard() {
     const original = btn.innerHTML;
     btn.innerHTML = '<span class="spinner"></span> 刷新中…';
     try {
-      await drawTasks();
-      const tb = $('#task-body');
+      await taskTable.refresh();
+      const tb = document.querySelector('#task-table tbody');
       if (tb) {
         tb.classList.remove('task-flash');
         void tb.offsetWidth; // 重置动画，保证每次点击都闪烁
@@ -263,22 +530,26 @@ async function renderDashboard() {
       btn.disabled = false;
     }
   };
-  await drawTasks();
+  await taskTable.refresh();
 }
 
 // ---------- 封面管理 ----------
 async function renderTargets() {
-  // 每次进入页面生成新的时间戳，用于首次打开时拉取 Emby 当前最新封面
-  state.coverStamp = Date.now();
   main.innerHTML = `
     <div class="page-title">封面管理</div>
     <div class="page-desc">管理 Emby 媒体库与合集的封面生成，单选可单独配置，支持多选批量操作</div>
-    <div class="chips" id="chips">
-      <button class="chip ${state.filter === 'all' ? 'active' : ''}" data-f="all">全部</button>
-      <button class="chip ${state.filter === 'library' ? 'active' : ''}" data-f="library">媒体库</button>
-      <button class="chip ${state.filter === 'collection' ? 'active' : ''}" data-f="collection">合集</button>
-      <button class="chip ${state.filter === 'enabled' ? 'active' : ''}" data-f="enabled">监控中</button>
-      <button class="chip ${state.filter === 'locked' ? 'active' : ''}" data-f="locked">已锁定</button>
+    <div class="filter-bar">
+      <div class="search-box">
+        <span class="fico">${ICO.search}</span>
+        <input type="search" id="search-targets" placeholder="搜索名称…">
+      </div>
+      <div class="fdrop" id="fdrop-type"></div>
+      <div class="fdrop" id="fdrop-status"></div>
+      <div class="fdrop" id="fdrop-cfg"></div>
+      <div class="fdrop" id="fdrop-cover"></div>
+      <button class="clear-filters-link" id="btn-clear-filters" type="button">
+        ${ICO.clear}<span>清除筛选</span>
+      </button>
     </div>
     <div class="progress-box" id="sync-progress" style="display:none">
       <div class="row" style="justify-content:space-between">
@@ -296,6 +567,7 @@ async function renderTargets() {
         <div class="row" style="gap:12px">
           <label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" class="tick" id="sel-all"> 全选</label>
           <span class="muted" id="sel-count">已选 0 项</span>
+          <button class="btn sm primary" id="sync-all-covers">同步媒体库封面</button>
         </div>
         <div class="row" style="gap:8px;flex-wrap:wrap">
           <button class="btn sm" id="batch-enable" disabled>取消锁定</button>
@@ -314,19 +586,72 @@ async function renderTargets() {
       state.styles = { styles: [{ id: 'single', name: '单图海报' }], sizes: [{ id: 'poster', label: '海报 2:3' }, { id: 'thumb', label: '缩略图 16:9' }] };
     }
   }
-  document.querySelectorAll('#chips .chip').forEach((c) => {
-    c.onclick = () => {
-      state.filter = c.dataset.f;
-      document.querySelectorAll('#chips .chip').forEach((x) => x.classList.toggle('active', x === c));
+  const filterDefs = [
+    {
+      key: 'type', id: 'fdrop-type', icon: ICO.grid,
+      options: [
+        { value: 'all', label: '全部类型', icon: ICO.grid },
+        { value: 'library', label: '媒体库', icon: ICO.layer },
+        { value: 'collection', label: '合集', icon: ICO.folder }
+      ]
+    },
+    {
+      key: 'status', id: 'fdrop-status', icon: ICO.status,
+      options: [
+        { value: 'all', label: '全部状态', icon: ICO.status },
+        { value: 'enabled', label: '监控中', icon: ICO.check },
+        { value: 'locked', label: '已锁定', icon: ICO.lock }
+      ]
+    },
+    {
+      key: 'cfg', id: 'fdrop-cfg', icon: ICO.cfg,
+      options: [
+        { value: 'all', label: '全部配置', icon: ICO.cfg },
+        { value: 'default', label: '默认配置', icon: ICO.doc },
+        { value: 'configured', label: '手动配置', icon: ICO.pencil }
+      ]
+    },
+    {
+      key: 'cover', id: 'fdrop-cover', icon: ICO.cover,
+      options: [
+        { value: 'all', label: '全部封面', icon: ICO.cover },
+        { value: 'generated', label: '已生成', icon: ICO.cover },
+        { value: 'error', label: '有错误', icon: ICO.alert }
+      ]
+    }
+  ];
+  state.fdropRefs = {};
+  filterDefs.forEach((def) => {
+    const el = document.getElementById(def.id);
+    if (!el) return;
+    state.fdropRefs[def.key] = buildFilterDropdown(el, {
+      icon: def.icon,
+      options: def.options,
+      value: state.filters[def.key] || 'all',
+      onChange: (v) => {
+        state.filters[def.key] = v;
+        state.selected.clear();
+        drawTargets();
+      }
+    });
+  });
+  const clearBtn = $('#btn-clear-filters');
+  if (clearBtn) {
+    clearBtn.onclick = () => {
+      state.filters = { type: 'all', status: 'all', cfg: 'all', cover: 'all' };
+      Object.values(state.fdropRefs || {}).forEach((r) => r.setValue('all', true));
+      const s = $('#search-targets');
+      if (s) s.value = '';
       state.selected.clear();
       drawTargets();
     };
-  });
+  }
+  const searchEl = $('#search-targets');
+  if (searchEl) searchEl.oninput = () => drawTargets();
 
   try {
     const r = await api('/api/targets');
     state.targets = r.targets;
-    updateChipCounts();
     drawTargets();
   } catch (e) {
     $('#target-list').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
@@ -401,12 +726,14 @@ function hasCfgChanges(t, cur) {
 }
 
 function drawTargets() {
-  const f = state.filter;
-  const list = state.targets.filter((t) => {
-    if (f === 'library') return t.kind === 'library';
-    if (f === 'collection') return t.kind === 'collection';
-    if (f === 'enabled') return !t.locked;
-    if (f === 'locked') return t.locked;
+  const f = state.filters;
+  const q = ($('#search-targets')?.value || '').trim().toLowerCase();
+  const searchList = state.targets.filter((t) => !q || (t.name || '').toLowerCase().includes(q));
+  const list = searchList.filter((t) => {
+    if (f.type !== 'all' && t.kind !== f.type) return false;
+    if (f.status !== 'all' && (f.status === 'locked' ? !t.locked : t.locked)) return false;
+    if (f.cfg !== 'all' && (f.cfg === 'configured' ? !t.configured : t.configured)) return false;
+    if (f.cover !== 'all' && (f.cover === 'generated' ? !t.coverUrl : !t.lastError)) return false;
     return true;
   }).sort((a, b) => ((a.kind === b.kind) ? 0 : (a.kind === 'library' ? -1 : 1)) || a.name.localeCompare(b.name, 'zh-CN'));
   const box = $('#target-list');
@@ -417,10 +744,8 @@ function drawTargets() {
   box.innerHTML = list.map((t) => {
     const kind = t.kind === 'library' ? '<span class="badge lib">媒体库</span>' : '<span class="badge col">合集</span>';
     const thumbStyle = t.kind === 'library' ? 'width:96px;height:54px' : 'width:56px;height:84px';
-    const liveW = t.kind === 'library' ? 300 : 200;
-    const liveSrc = `/api/item-image/${encodeURIComponent(t.id)}?w=${liveW}&t=${encodeURIComponent(state.coverStamp || Date.now())}`;
     const thumb = t.coverUrl
-      ? `<img class="thumb" style="${thumbStyle}" src="${liveSrc}" onerror="this.onerror=null;this.src='${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}'" alt="" title="点击预览" data-preview="${esc(t.id)}">`
+      ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
       : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;font-size:22px;${thumbStyle}">🎬</div>`;
     const pickBy = t.pickBy || targetDefaultPick(t);
     const pickLabel = pickBy === 'premiere' ? '最新发行' : pickBy === 'manual' ? '手动选择' : '最新入库';
@@ -574,27 +899,10 @@ async function refreshTargets() {
   try {
     const r = await api('/api/targets');
     state.targets = r.targets;
-    updateChipCounts();
   } catch (e) {
     toast(e.message, 'err');
   }
   if ($('#target-list')) drawTargets();
-}
-
-function updateChipCounts() {
-  const ts = state.targets || [];
-  const counts = {
-    all: ts.length,
-    library: ts.filter((t) => t.kind === 'library').length,
-    collection: ts.filter((t) => t.kind === 'collection').length,
-    enabled: ts.filter((t) => !t.locked).length,
-    locked: ts.filter((t) => t.locked).length
-  };
-  const labels = { all: '全部', library: '媒体库', collection: '合集', enabled: '监控中', locked: '已锁定' };
-  document.querySelectorAll('#chips .chip').forEach((c) => {
-    const n = counts[c.dataset.f];
-    if (n !== undefined) c.textContent = `${labels[c.dataset.f] || ''} (${n})`;
-  });
 }
 
 function updateBatchUI() {
@@ -632,6 +940,11 @@ function bindBatch() {
   $('#batch-disable').onclick = () => batchAction('disable');
   $('#batch-reset').onclick = () => batchAction('reset');
   $('#batch-gen').onclick = () => batchAction('generate');
+  $('#sync-all-covers').onclick = () => {
+    toast('开始同步所有未锁定封面…', 'ok');
+    showSyncProgress();
+    api('/api/sync', { method: 'POST', body: { force: true } }).then(() => {}).catch(() => {});
+  };
   const syncState = state.status?.sync;
   if (syncState && (syncState.running || syncState.status === 'paused')) showSyncProgress();
 }
@@ -1474,28 +1787,36 @@ async function renderLogs() {
       <span class="muted" id="log-count"></span>
     </div>
     <div class="panel" style="padding:10px 14px">
-      <table class="table"><thead><tr><th style="width:170px">时间</th><th style="width:70px">级别</th><th>内容</th></tr></thead><tbody id="log-body"></tbody></table>
+      <div class="scroll-panel" style="max-height:520px">
+        <table class="table" id="log-table"><thead></thead><tbody><tr><td colspan="3" class="empty">加载中…</td></tr></tbody></table>
+      </div>
     </div>`;
 
-  async function refresh() {
-    try {
-      const r = await api('/api/logs');
-      state.logs = r.logs;
-      const tb = $('#log-body');
-      if (!tb) return;
-      $('#log-count').textContent = `共 ${r.logs.length} 条`;
-      tb.innerHTML = r.logs.slice(0, 120).map((l) => `
-        <tr>
-          <td class="muted" style="font-size:12px">${fmtTime(l.ts)}</td>
-          <td><span class="lvl-${esc(l.level)}">${esc(l.level)}</span></td>
-          <td>${esc(l.message)}</td>
-        </tr>`).join('') || '<tr><td colspan="3" class="empty">暂无日志</td></tr>';
-    } catch {
-      // 忽略轮询错误
-    }
-  }
-  $('#btn-refresh-logs').onclick = refresh;
-  await refresh();
+  const logTable = createDataTable({
+    el: $('#log-table'),
+    emptyText: '暂无日志',
+    fetchData: () => api('/api/logs').then((r) => {
+      state.logs = r.logs || [];
+      $('#log-count').textContent = `共 ${state.logs.length} 条`;
+      return state.logs;
+    }),
+    columns: [
+      { key: 'ts', label: '时间', width: '170px', sortable: true, render: (l) => `<td class="muted" style="font-size:12px">${fmtTime(l.ts)}</td>` },
+      {
+        key: 'level', label: '级别', width: '70px', sortable: true,
+        filterOpts: [
+          { value: 'info', label: 'info' },
+          { value: 'warn', label: 'warn' },
+          { value: 'error', label: 'error' }
+        ],
+        render: (l) => `<td><span class="lvl-${esc(l.level)}">${esc(l.level)}</span></td>`
+      },
+      { key: 'message', label: '内容', render: (l) => `<td>${esc(l.message)}</td>` }
+    ]
+  });
+  logTable.render();
+  $('#btn-refresh-logs').onclick = () => logTable.refresh();
+  await logTable.refresh();
 }
 
 // 启动
