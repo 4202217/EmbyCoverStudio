@@ -84,14 +84,20 @@ body {
 }
 .side-version:hover { color: var(--accent); }
 .changelog {
-  white-space: pre-wrap;
-  word-break: break-word;
   font-size: 13px;
   line-height: 1.7;
   color: var(--text);
   max-height: 60vh;
   overflow-y: auto;
-  margin: 0;
+}
+.changelog h2 { font-size: 16px; margin: 4px 0 10px; }
+.changelog h3 { font-size: 14px; margin: 14px 0 6px; }
+.changelog h4 { font-size: 13px; margin: 10px 0 4px; color: var(--accent); }
+.changelog ul { margin: 4px 0 10px; padding-left: 20px; }
+.changelog li { margin: 3px 0; }
+.changelog p { margin: 4px 0; }
+.changelog code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.changelog strong { color: var(--text); }
 }
 .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .dot.green { background: var(--ok); }

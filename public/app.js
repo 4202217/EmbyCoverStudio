@@ -45,6 +45,38 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function inlineMd(s) {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function renderMarkdown(text) {
+  const lines = String(text || '').split('\n');
+  const out = [];
+  let list = null;
+  const flushList = () => {
+    if (list) {
+      out.push(`<ul>${list.join('')}</ul>`);
+      list = null;
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      flushList();
+      continue;
+    }
+    if (/^###\s+/.test(line)) { flushList(); out.push(`<h4>${inlineMd(line.replace(/^###\s+/, ''))}</h4>`); }
+    else if (/^##\s+/.test(line)) { flushList(); out.push(`<h3>${inlineMd(line.replace(/^##\s+/, ''))}</h3>`); }
+    else if (/^#\s+/.test(line)) { flushList(); out.push(`<h2>${inlineMd(line.replace(/^#\s+/, ''))}</h2>`); }
+    else if (/^[-*]\s+/.test(line)) { list = list || []; list.push(`<li>${inlineMd(line.replace(/^[-*]\s+/, ''))}</li>`); }
+    else { flushList(); out.push(`<p>${inlineMd(line)}</p>`); }
+  }
+  flushList();
+  return out.join('\n');
+}
+
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -396,7 +428,7 @@ function updateSidebar() {
       }
       openModal(`
         <div class="modal-head"><h3>更新记录</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
-        <pre class="changelog">${esc(text)}</pre>
+        <div class="changelog">${renderMarkdown(text)}</div>
       `);
     };
   }
