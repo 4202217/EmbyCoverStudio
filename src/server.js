@@ -183,6 +183,30 @@ export async function createApp(options = {}) {
     sendJson(res, 200, { ok: true, settings: store.settings });
   });
 
+  route('GET', '/api/export', (req, res) => {
+    sendJson(res, 200, {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      settings: store.settings,
+      targets: store.listTargets(),
+      tasks: store.data.tasks
+    });
+  });
+
+  route('POST', '/api/import', async (req, res) => {
+    const body = await readJson(req);
+    const data = body?.data && typeof body.data === 'object' ? body.data : body;
+    if (!data || data.version !== 1 || !data.settings || !data.targets) {
+      sendJson(res, 400, { error: '备份文件格式不正确或版本不匹配' });
+      return;
+    }
+    store.replaceAll(data.settings, data.targets, data.tasks || []);
+    setupCron();
+    embyStatusCache = { at: 0, value: null };
+    info('已导入配置与数据备份');
+    sendJson(res, 200, { ok: true, importedTargets: store.listTargets().length });
+  });
+
   route('PUT', '/api/settings', async (req, res) => {
     const body = await readJson(req);
     if (body.cron !== undefined) {

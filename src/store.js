@@ -345,6 +345,19 @@ export class Store {
     return target;
   }
 
+  // 整体替换配置、目标与任务记录（用于导入备份）
+  replaceAll(settings, targets, tasks) {
+    this.data.settings = deepMerge(defaultSettings(), sanitizeSettings(settings || {}));
+    const map = {};
+    const list = Array.isArray(targets) ? targets : Object.values(targets || {});
+    for (const t of list) {
+      if (t && t.id) map[String(t.id)] = { ...t, id: String(t.id) };
+    }
+    this.data.targets = map;
+    this.data.tasks = Array.isArray(tasks) ? tasks.slice(-300) : [];
+    this.save();
+  }
+
   addLog(level, message) {
     this.data.logs.push({ ts: new Date().toISOString(), level, message });
     if (this.data.logs.length > 500) this.data.logs = this.data.logs.slice(-500);

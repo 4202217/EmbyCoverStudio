@@ -268,6 +268,8 @@ async function renderDashboard() {
 
 // ---------- 封面管理 ----------
 async function renderTargets() {
+  // 每次进入页面生成新的时间戳，用于首次打开时拉取 Emby 当前最新封面
+  state.coverStamp = Date.now();
   main.innerHTML = `
     <div class="page-title">封面管理</div>
     <div class="page-desc">管理 Emby 媒体库与合集的封面生成，单选可单独配置，支持多选批量操作</div>
@@ -415,8 +417,10 @@ function drawTargets() {
   box.innerHTML = list.map((t) => {
     const kind = t.kind === 'library' ? '<span class="badge lib">媒体库</span>' : '<span class="badge col">合集</span>';
     const thumbStyle = t.kind === 'library' ? 'width:96px;height:54px' : 'width:56px;height:84px';
+    const liveW = t.kind === 'library' ? 300 : 200;
+    const liveSrc = `/api/item-image/${encodeURIComponent(t.id)}?w=${liveW}&t=${encodeURIComponent(state.coverStamp || Date.now())}`;
     const thumb = t.coverUrl
-      ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
+      ? `<img class="thumb" style="${thumbStyle}" src="${liveSrc}" onerror="this.onerror=null;this.src='${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}'" alt="" title="点击预览" data-preview="${esc(t.id)}">`
       : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;font-size:22px;${thumbStyle}">🎬</div>`;
     const pickBy = t.pickBy || targetDefaultPick(t);
     const pickLabel = pickBy === 'premiere' ? '最新发行' : pickBy === 'manual' ? '手动选择' : '最新入库';
@@ -1047,6 +1051,17 @@ async function renderSettings() {
     </div>
 
     <div class="panel">
+      <h3>配置与数据备份</h3>
+      <div class="row" style="gap:10px;flex-wrap:wrap">
+        <button class="btn primary" id="btn-export">导出备份</button>
+        <button class="btn" id="btn-import">导入备份</button>
+        <input type="file" id="import-file" accept=".json,application/json" style="display:none">
+        <span class="status-line" id="backup-result"></span>
+      </div>
+      <p class="hint" style="margin-top:8px">备份包含当前设置（含 Emby API 密钥与访问令牌，请妥善保管）、全部媒体库/合集配置和任务记录；封面图片不包含在内，导入后重新生成即可。</p>
+    </div>
+
+    <div class="panel">
       <h3>访问令牌（可选）</h3>
       <label class="field"><span class="lab">访问令牌</span>
         <input type="password" id="set-accessToken" value="${esc(s.accessToken)}" placeholder="留空表示不启用">
@@ -1376,6 +1391,74 @@ async function renderSettings() {
     } finally {
       btn.disabled = false;
       btn.textContent = '保存并重新生成当前配置封面';
+    }
+  };
+
+  $('#btn-export').onclick = async () => {
+    const el = $('#backup-result');
+    el.className = 'status-line';
+    el.textContent = '正在导出…';
+    try {
+      const headers = {};
+      if (state.token) headers['x-access-token'] = state.token;
+      const res = await fetch('/api/export', { headers });
+      if (!res.ok) throw new Error(`导出失败（HTTP ${res.status}）`);
+      const blob = await res.blob();
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const name = `emby-cover-studio-backup-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      el.className = 'status-line ok';
+      el.textContent = `已导出 ${name} ✅`;
+      toast('备份已导出', 'ok');
+    } catch (e) {
+      el.className = 'status-line err';
+      el.textContent = e.message;
+    }
+  };
+
+  $('#btn-import').onclick = () => $('#import-file').click();
+  $('#import-file').onchange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    const el = $('#backup-result');
+    if (!file) return;
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      el.className = 'status-line err';
+      el.textContent = '备份文件不是有效的 JSON';
+      e.target.value = '';
+      return;
+    }
+    if (!data || data.version !== 1 || !data.settings || !data.targets) {
+      el.className = 'status-line err';
+      el.textContent = '备份文件格式不正确或版本不匹配';
+      e.target.value = '';
+      return;
+    }
+    if (!window.confirm('导入将覆盖当前全部配置与数据（设置、媒体库/合集、任务记录），确定继续吗？')) {
+      e.target.value = '';
+      return;
+    }
+    el.className = 'status-line';
+    el.textContent = '正在导入…';
+    try {
+      const r = await api('/api/import', { method: 'POST', body: { data } });
+      el.className = 'status-line ok';
+      el.textContent = `导入成功 ✅（${r.importedTargets} 个媒体库/合集）`;
+      toast('导入成功，正在刷新…', 'ok');
+      e.target.value = '';
+      renderSettings();
+      loadStatus();
+    } catch (err) {
+      el.className = 'status-line err';
+      el.textContent = `导入失败：${err.message}`;
+      e.target.value = '';
     }
   };
 
