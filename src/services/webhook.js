@@ -42,29 +42,83 @@ export function createWebhookService(store, syncService) {
   async function resolveTargetIds(payload) {
     const event = String(payload?.Event || '').toLowerCase();
     const itemId = payload?.Item?.Id ? String(payload.Item.Id) : '';
-    if (!itemId) return null;
+    const itemType = String(payload?.Item?.Type || '');
+    const isLibFolder = itemType === 'CollectionFolder' || itemType === 'Folder';
+    if (!itemId) {
+      info(`Webhook 事件 ${event} 缺少 Item.Id，无法定位，将执行全量同步`);
+      return null;
+    }
     if (event === 'library.new' || event === 'library.updated') {
-      const t = store.getTarget(itemId);
-      if (!t || t.kind !== 'library') return null;
-      return !t.locked ? [t.id] : [];
+      if (isLibFolder) {
+        const t = store.getTarget(itemId);
+        if (!t || t.kind !== 'library') {
+          info(`Webhook 事件 ${event}（${itemId}）未匹配到媒体库目标，将执行全量同步`);
+          return null;
+        }
+        return !t.locked ? [t.id] : [];
+      }
+      // 插件会把新媒体项也发成 library.new（Item.Type 为媒体类型），按条目定位
+      info(`Webhook 事件 ${event} 的条目类型为 ${itemType || '未知'}，按媒体条目精准定位`);
     }
     if (event === 'collection.updated') {
       const t = store.getTarget(itemId);
-      if (!t || t.kind !== 'collection') return null;
+      if (!t || t.kind !== 'collection') {
+        info(`Webhook 事件 ${event}（${itemId}）未匹配到合集目标，将执行全量同步`);
+        return null;
+      }
       return !t.locked ? [t.id] : [];
     }
-    // item.added / item.updated / item.removed：通过祖先查询定位所属媒体库与合集
-    const ancestors = await new EmbyClient(store.settings).getItemAncestors(itemId).catch(() => []);
-    if (!ancestors.length) return null;
+    // item 类事件（含插件把新媒体发成 library.new 的情况）：先祖先查询，再按路径定位
+    const client = new EmbyClient(store.settings);
+    const ancestors = await client.getItemAncestors(itemId).catch((e) => {
+      info(`Webhook 祖先查询失败（${itemId}）：${e.message}`);
+      return [];
+    });
     const ids = new Set(ancestors.map((a) => String(a.id)));
     const matched = store.listTargets().filter((t) => ids.has(t.id) && !t.locked).map((t) => t.id);
-    return matched.length ? matched : [];
+    info(`Webhook 祖先定位：${ancestors.map((a) => `${a.id}:${a.name || a.type}`).join(', ')}，匹配目标 ${matched.length} 个`);
+    if (!matched.length) {
+      // Ancestors 只返回物理文件夹，不含媒体库本身：沿父级链 / 文件路径找媒体库
+      const lib = await client.findLibraryOfItem(itemId).catch(() => null);
+      let libByPath = null;
+      try {
+        const info = await client.getItemInfo(itemId, 'Path').catch(() => null);
+        const itemPath = info?.Path || String(payload?.Item?.Path || '');
+        if (itemPath) {
+          const libs = await client.getLibraries();
+          const norm = (p) => String(p || '').replace(/\/+$/, '');
+          libByPath = libs.find((l) => (l.locations || []).some((loc) => {
+            const base = norm(loc);
+            return base && itemPath.startsWith(base);
+          })) || null;
+        }
+      } catch {
+        libByPath = null;
+      }
+      const found = lib || libByPath;
+      if (found) {
+        const t = store.getTarget(found.id);
+        if (t && !t.locked) {
+          info(`媒体库定位（${libByPath ? '路径' : '父级链'}）：${found.id}:${found.name}`);
+          return [t.id];
+        }
+      }
+    }
+    return matched;
   }
 
   async function handle(payload) {
     const event = String(payload?.Event || '').toLowerCase();
     lastEvent = event || '(未知事件)';
     lastEventAt = new Date().toISOString();
+    info(`Webhook 原始事件：${JSON.stringify({
+      event: payload?.Event,
+      itemId: payload?.Item?.Id,
+      itemName: payload?.Item?.Name,
+      itemType: payload?.Item?.Type,
+      path: payload?.Item?.Path,
+      parentId: payload?.Item?.ParentId
+    })}`);
     if (testArm) {
       testResult = { event: lastEvent, at: lastEventAt };
       testArm = null;

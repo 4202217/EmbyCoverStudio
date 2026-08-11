@@ -104,7 +104,7 @@ body {
 .dot.red { background: var(--err); }
 .dot.blue { background: var(--accent); }
 
-#main { flex: 1; padding: 30px 36px; max-width: 1160px; }
+#main { flex: 1; padding: 30px 36px; max-width: 1160px; min-width: 0; }
 
 .page-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .page-desc { color: var(--muted); margin-bottom: 22px; }
@@ -132,6 +132,7 @@ body {
   padding: 20px 22px;
   margin-bottom: 18px;
 }
+.panel { min-width: 0; }
 .panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -492,6 +493,41 @@ input[type="color"] {
 }
 .health-row .btn { flex-shrink: 0; }
 .health-ok { color: var(--ok); font-size: 14px; padding: 8px 0; }
+.recent-grid {
+  display: flex;
+  gap: 14px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  min-width: 0;
+  padding-bottom: 6px;
+  scrollbar-width: none;
+}
+.recent-grid::-webkit-scrollbar { display: none; }
+.recent-title { font-size: 12px; font-weight: 600; color: var(--muted); margin: 8px 0 6px; }
+.recent-item { cursor: pointer; flex-shrink: 0; }
+.recent-item.lib { width: 140px; }
+.recent-item.col { width: 88px; }
+.recent-img { position: relative; }
+.recent-item img {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  display: block;
+  transition: transform 0.15s ease;
+}
+.recent-item:hover img { transform: scale(1.03); }
+.recent-trig-line { margin-top: 4px; }
+.recent-trig-line .badge { font-size: 10px; padding: 1px 6px; }
+.recent-name {
+  font-size: 12px;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-time { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .ico-inline { display: inline-flex; width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
 .ico-inline svg { width: 14px; height: 14px; }
 .ico-thumb { width: 24px; height: 24px; opacity: 0.5; }

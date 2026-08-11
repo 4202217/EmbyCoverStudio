@@ -332,6 +332,7 @@ export class Store {
       size: '',
       titleOverride: '',
       configured: false,
+      lastTrigger: '',
       itemHash: '',
       coverFile: '',
       coverHash: '',

@@ -489,6 +489,13 @@ async function renderDashboard() {
   }
   const failedTargets = targets.filter((t) => t.lastError && !t.acknowledged);
   const failedTasks = tasks.filter((t) => t.status === 'failed' && !t.acknowledged).slice(0, 5);
+  state.targets = targets;
+  const recentSort = (list) => [...list]
+    .filter((t) => t.coverUrl && t.lastGeneratedAt)
+    .sort((a, b) => new Date(b.lastGeneratedAt) - new Date(a.lastGeneratedAt))
+    .slice(0, 5);
+  const recentLibs = recentSort(targets.filter((t) => t.kind === 'library'));
+  const recentCols = recentSort(targets.filter((t) => t.kind === 'collection'));
 
   main.innerHTML = `
     <div class="page-title">概览</div>
@@ -498,7 +505,7 @@ async function renderDashboard() {
       <div class="card"><div class="label">监控中的合集</div><div class="value">${s.stats?.enabled ?? 0}<span style="font-size:13px;color:var(--muted)"> / ${s.stats?.targets ?? 0}</span></div><div class="sub">已生成封面 ${s.stats?.generated ?? 0} 个</div></div>
       <div class="card"><div class="label">封面生成张数</div><div class="value">${s.stats?.coversGenerated ?? 0}</div><div class="sub">累计生成（含重新生成）</div></div>
       <div class="card"><div class="label">最近同步</div><div class="value" style="font-size:15px">${fmtTime(s.lastRun)}</div><div class="sub">${esc(s.lastReason || '')}${s.lastError ? ' · 有错误' : ''}</div></div>
-      <div class="card"><div class="label">定时任务</div><div class="value" style="font-size:15px">${esc(s.cron || '—')}</div><div class="sub">${s.webhookPending ? 'Webhook 待执行' : '等待触发'}</div></div>
+      <div class="card"><div class="label">定时任务</div><div class="value" style="font-size:15px">${esc(s.cron || '—')}</div><div class="sub">${s.webhookPending ? 'Webhook 待执行' : (s.nextRun ? `下次 ${fmtTime(s.nextRun)}` : '等待触发')}</div></div>
     </div>
     ${s.font?.hint ? `<div class="status-line err" style="margin-bottom:14px"><span class="ico-inline">${ICO.alert}</span>${esc(s.font.hint)}（当前使用字体：${esc(s.font.fontFamily)}）</div>` : ''}
     <div class="panel">
@@ -531,6 +538,36 @@ async function renderDashboard() {
               </div>`).join('')}
           </div>` : ''}
       ` : `<div class="health-ok"><span class="ico-inline">${ICO.check}</span>全部正常，无需关注</div>`}
+    </div>
+    <div class="panel">
+      <h3 style="margin-bottom:10px">最近生成</h3>
+      ${recentLibs.length ? `
+        <div class="recent-title">媒体库</div>
+        <div class="recent-grid">
+          ${recentLibs.map((t) => `
+          <div class="recent-item lib" data-preview="${esc(t.id)}" title="点击预览">
+            <div class="recent-img">
+              <img src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="">
+            </div>
+            ${t.lastTrigger ? `<div class="recent-trig-line"><span class="badge trig-${esc(t.lastTrigger)}">${esc(TRIGGER_LABEL[t.lastTrigger] || t.lastTrigger)}</span></div>` : ''}
+            <div class="recent-name">${esc(t.name)}</div>
+            <div class="recent-time">${fmtTime(t.lastGeneratedAt)}</div>
+          </div>`).join('')}
+        </div>` : ''}
+      ${recentCols.length ? `
+        <div class="recent-title">合集</div>
+        <div class="recent-grid">
+          ${recentCols.map((t) => `
+          <div class="recent-item col" data-preview="${esc(t.id)}" title="点击预览">
+            <div class="recent-img">
+              <img src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="">
+            </div>
+            ${t.lastTrigger ? `<div class="recent-trig-line"><span class="badge trig-${esc(t.lastTrigger)}">${esc(TRIGGER_LABEL[t.lastTrigger] || t.lastTrigger)}</span></div>` : ''}
+            <div class="recent-name">${esc(t.name)}</div>
+            <div class="recent-time">${fmtTime(t.lastGeneratedAt)}</div>
+          </div>`).join('')}
+        </div>` : ''}
+      ${!recentLibs.length && !recentCols.length ? '<div class="muted" style="padding:8px 0">还没有生成记录</div>' : ''}
     </div>`;
 
   const ackRefresh = async () => {
@@ -588,6 +625,48 @@ async function renderDashboard() {
         b.textContent = '重试';
       }
     };
+  });
+
+  document.querySelectorAll('.recent-item[data-preview]').forEach((el) => {
+    el.onclick = () => showPreview(el.dataset.preview);
+  });
+
+  document.querySelectorAll('.recent-grid').forEach((grid) => {
+    // 滚轮纵向滚动转为画廊横向滚动
+    grid.addEventListener('wheel', (e) => {
+      if (grid.scrollWidth <= grid.clientWidth) return;
+      e.preventDefault();
+      grid.scrollLeft += e.deltaY + e.deltaX;
+    }, { passive: false });
+    // 按住拖拽横向滚动
+    let dragging = false;
+    let startX = 0;
+    let startLeft = 0;
+    grid.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX;
+      startLeft = grid.scrollLeft;
+      grid.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const moved = Math.abs(e.clientX - startX);
+      if (moved > 6) grid.dataset.dragged = '1';
+      grid.scrollLeft = startLeft - (e.clientX - startX);
+    });
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      grid.style.cursor = '';
+    });
+    grid.addEventListener('click', (e) => {
+      if (grid.dataset.dragged === '1') {
+        e.preventDefault();
+        e.stopPropagation();
+        grid.dataset.dragged = '';
+      }
+    }, true);
   });
 }
 

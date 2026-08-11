@@ -163,7 +163,7 @@ export function createSyncService(store) {
     });
   }
 
-  async function syncTarget(target, client, { force = false } = {}) {
+  async function syncTarget(target, client, { force = false, trigger = '' } = {}) {
     const settings = store.settings;
     const size = resolveSize(target, settings);
     const defStyle = settings.styleByKind?.[target.kind] || 'single';
@@ -217,6 +217,7 @@ export function createSyncService(store) {
       posterCount: posters.length,
       posterSource: posters[0]?.name || '',
       lastGeneratedAt: now,
+      lastTrigger: trigger || target.lastTrigger || '',
       needsRegen: false,
       missing: false
     };
@@ -307,7 +308,8 @@ export function createSyncService(store) {
         }
         state.queueCurrent = t.name;
         try {
-          const r = await syncTarget(t, client, { force });
+          const trig = triggerOf(reason);
+          const r = await syncTarget(t, client, { force, trigger: trig });
           if (r.changed) updated += 1;
           else unchanged += 1;
         } catch (e) {
@@ -413,7 +415,7 @@ export function createSyncService(store) {
     try {
       const client = await getClient();
       if (!client.configured) throw new Error('未配置 Emby 服务器地址或 API 密钥');
-      const r = await syncTarget(target, client, { force });
+      const r = await syncTarget(target, client, { force, trigger: triggerOf(reason) });
       state.queueDone = 1;
       state.status = 'done';
       store.addTask(taskRecord({

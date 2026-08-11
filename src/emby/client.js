@@ -141,6 +141,7 @@ export class EmbyClient {
       id: String(v.ItemId || v.PrimaryImageItemId || ''),
       name: v.Name || '',
       collectionType: v.CollectionType || '',
+      locations: Array.isArray(v.Locations) ? v.Locations : [],
       kind: 'library'
     })).filter((v) => v.id && v.name);
     if (!libs.length) {
@@ -228,6 +229,42 @@ export class EmbyClient {
       }
     }
     throw lastErr;
+  }
+
+  async getItemInfo(itemId, fields = '') {
+    const uid = await this._ensureUser();
+    const qs = fields ? `?Fields=${fields}` : '';
+    const paths = uid ? [`/Users/${uid}/Items/${itemId}${qs}`, `/Items/${itemId}${qs}`] : [`/Items/${itemId}${qs}`];
+    let lastErr = null;
+    for (const p of paths) {
+      try {
+        return await this._json(p);
+      } catch (e) {
+        lastErr = e;
+        if (e.status !== 401 && e.status !== 404) throw e;
+      }
+    }
+    throw lastErr;
+  }
+
+  // 沿父级链向上查找条目所属的媒体库（CollectionFolder）
+  async findLibraryOfItem(itemId) {
+    let id = String(itemId);
+    for (let i = 0; i < 8; i += 1) {
+      let item = null;
+      try {
+        item = await this.getItemInfo(id, 'Path');
+      } catch {
+        return null;
+      }
+      if (!item) return null;
+      if (item.Type === 'CollectionFolder') {
+        return { id: String(item.Id), name: item.Name || '' };
+      }
+      if (!item.ParentId) return null;
+      id = String(item.ParentId);
+    }
+    return null;
   }
 
   async getImage(itemId, maxWidth = 400) {
