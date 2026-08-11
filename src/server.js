@@ -348,7 +348,7 @@ export async function createApp(options = {}) {
     if ('titleOverride' in body) patch.titleOverride = String(body.titleOverride || '').trim();
     if ('pickBy' in body) {
       const v = String(body.pickBy || '');
-      patch.pickBy = ['added', 'premiere', 'manual'].includes(v) ? v : 'added';
+      patch.pickBy = ['added', 'premiere', 'manual', 'random'].includes(v) ? v : 'added';
       patch.configured = true;
       if (patch.pickBy !== 'manual') {
         patch.manualItemId = '';
@@ -438,6 +438,33 @@ export async function createApp(options = {}) {
       };
       const png = await syncService.previewById(params.id, overrides);
       sendBuffer(res, 200, png, 'image/png');
+    } catch (e) {
+      sendJson(res, 400, { error: e.message });
+    }
+  });
+
+  route('POST', '/api/targets/:id/preview-draft', async (req, res, params) => {
+    const target = store.getTarget(params.id);
+    if (!target) {
+      sendJson(res, 404, { error: '目标不存在' });
+      return;
+    }
+    const body = await readJson(req);
+    const style = body.style === 'wall3' && target.kind === 'library' ? 'wall3' : 'single';
+    const pickBy = ['manual', 'premiere', 'random', 'added'].includes(body.pickBy) ? body.pickBy : 'added';
+    const manualItemId = String(body.manualItemId || '').trim();
+    const manualItemName = String(body.manualItemName || '').trim();
+    if (pickBy === 'manual' && !manualItemId) {
+      sendJson(res, 400, { error: '请先选择封面影片' });
+      return;
+    }
+    try {
+      const settings = store.settings;
+      const cover = settings.coverByStyle?.[`${target.kind}-${style}`] || {};
+      const png = await syncService.previewWithSettings(target.id, { style, cover, pickBy, manualItemId });
+      const draftFile = path.join(COVERS_DIR, `${target.id}.draft.png`);
+      fs.writeFileSync(draftFile, png);
+      sendJson(res, 200, { ok: true, coverUrl: `/api/covers/${encodeURIComponent(target.id)}.draft.png?t=${Date.now()}` });
     } catch (e) {
       sendJson(res, 400, { error: e.message });
     }

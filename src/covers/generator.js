@@ -237,8 +237,8 @@ async function layoutWall(ctx, list) {
   const pad = Math.round(W * 0.07); // 文字左间距（与上间距保持一致）
   const angle = 30; // 向右倾斜角度
   const rows = 3;
-  const gapX = Math.max(4, Math.round(8 * ctx.scale));
-  const gapY = Math.max(4, Math.round(8 * ctx.scale));
+  const gapX = Math.max(5, Math.round(13 * ctx.scale));
+  const gapY = Math.max(5, Math.round(13 * ctx.scale));
   const cols = 3;
   const pw = Math.round(W * 0.19); // 海报更大
   const ph = Math.round(pw * 1.5);

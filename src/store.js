@@ -119,8 +119,8 @@ function sanitizeSettings(patch) {
   }
   if ('defaultPickByByKind' in patch) {
     const s = patch.defaultPickByByKind || {};
-    const lib = s.library === 'premiere' ? 'premiere' : 'added';
-    const col = s.collection === 'premiere' ? 'premiere' : 'added';
+    const lib = ['premiere', 'random'].includes(s.library) ? s.library : 'added';
+    const col = ['premiere', 'random'].includes(s.collection) ? s.collection : 'added';
     out.defaultPickByByStyle = {
       'library-single': lib,
       'library-wall3': lib,
@@ -130,9 +130,9 @@ function sanitizeSettings(patch) {
   if ('defaultPickByByStyle' in patch) {
     const s = patch.defaultPickByByStyle || {};
     out.defaultPickByByStyle = {
-      'library-single': s['library-single'] === 'premiere' ? 'premiere' : 'added',
-      'library-wall3': s['library-wall3'] === 'premiere' ? 'premiere' : 'added',
-      'collection-single': s['collection-single'] === 'premiere' ? 'premiere' : 'added'
+      'library-single': ['premiere', 'random'].includes(s['library-single']) ? s['library-single'] : 'added',
+      'library-wall3': ['premiere', 'random'].includes(s['library-wall3']) ? s['library-wall3'] : 'added',
+      'collection-single': ['premiere', 'random'].includes(s['collection-single']) ? s['collection-single'] : 'added'
     };
   }
   if ('styleByKind' in patch) {

@@ -24,6 +24,7 @@ window.addEventListener('popstate', () => {
 const state = {
   page: currentPage(),
   filters: { type: 'all', status: 'all', cfg: 'all', cover: 'all' },
+  visibleIds: new Set(),
   taskSort: { key: 'seq', dir: -1 },
   taskFilter: { type: [], trigger: [], status: [] },
   settings: null,
@@ -128,6 +129,8 @@ const ICO = {
   clear: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
   chevron: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
 };
+
+const TRIGGER_LABEL = { manual: '手动', batch: '批量操作', scheduler: '定时任务', webhook: 'Webhook', startup: '服务启动', resume: '继续任务', enable: '启用合集' };
 
 function closeFilterMenus() {
   document.querySelectorAll('.fdrop-menu:not([hidden]), .thf-pop:not([hidden])').forEach((m) => {
@@ -540,6 +543,7 @@ async function renderDashboard() {
   document.querySelectorAll('[data-retry]').forEach((b) => {
     b.onclick = async () => {
       b.disabled = true;
+      b.style.minWidth = `${b.offsetWidth}px`;
       b.innerHTML = '<span class="spinner"></span>';
       try {
         await api(`/api/targets/${b.dataset.retry}/generate`, { method: 'POST', body: {} });
@@ -601,12 +605,10 @@ async function renderTargets() {
     </div>
     <div class="tlist" id="target-list"><div class="empty">加载中…</div></div>`;
 
-  if (!state.styles) {
-    try {
-      state.styles = (await api('/api/styles'));
-    } catch {
-      state.styles = { styles: [{ id: 'single', name: '单图海报' }], sizes: [{ id: 'poster', label: '海报 2:3' }, { id: 'thumb', label: '缩略图 16:9' }] };
-    }
+  try {
+    state.styles = (await api('/api/styles'));
+  } catch {
+    if (!state.styles) state.styles = { styles: [{ id: 'single', name: '单图海报' }], sizes: [{ id: 'poster', label: '海报 2:3' }, { id: 'thumb', label: '缩略图 16:9' }] };
   }
   const filterDefs = [
     {
@@ -690,16 +692,21 @@ function configHtml(t) {
   const locked = Boolean(t.locked);
   // 样式：媒体库可选单图/海报墙，合集仅单图；顺序为样式在前、选图依据在后
   const styleOpts = `<option value="single" ${style === 'single' ? 'selected' : ''}>单图海报</option>${isLib ? `<option value="wall3" ${style === 'wall3' ? 'selected' : ''}>海报墙</option>` : ''}`;
-  const manualOpt = style === 'single' ? `<option value="manual" ${pick === 'manual' ? 'selected' : ''}>手动选择</option>` : '';
-  const pickOpts = `<option value="added" ${pick === 'added' ? 'selected' : ''}>最新入库</option><option value="premiere" ${pick === 'premiere' ? 'selected' : ''}>最新发行</option>${manualOpt}`;
+  const pickBtns = `
+    <button class="pick-opt ${pick === 'added' ? 'active' : ''}" data-pick-btn="added" ${locked ? 'disabled' : ''}>最新入库</button>
+    <button class="pick-opt ${pick === 'premiere' ? 'active' : ''}" data-pick-btn="premiere" ${locked ? 'disabled' : ''}>最新发行</button>
+    ${style === 'single' ? `<button class="pick-opt ${pick === 'random' ? 'active' : ''}" data-pick-btn="random" ${locked ? 'disabled' : ''}>随机</button>` : ''}
+    ${style === 'single' ? `<button class="pick-opt ${pick === 'manual' ? 'active' : ''}" data-pick-btn="manual" ${locked ? 'disabled' : ''}>手动选择</button>` : ''}`;
   const manualBlock = style === 'single' && pick === 'manual' ? `
     <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
-      <span class="muted" style="font-size:12px">已选：${esc(manualName || '未选择')}</span>
-      <button class="btn sm" data-pick-manual="${esc(t.id)}">选择封面影片</button>
+      <span class="muted" style="font-size:12px">已选：${esc(manualName || '未选择')}${manualName ? '' : '（点选图依据可重新选择）'}${manualName ? ' · 保存后自动锁定' : ''}</span>
     </div>` : '';
+  const changed = hasCfgChanges(t, pend);
   const actions = locked
-    ? `<button class="btn sm" data-unlock="${esc(t.id)}">取消锁定</button><button class="btn sm ghost" data-cancel-cfg="${esc(t.id)}">取消</button><span class="muted" style="font-size:11px">已锁定，需先取消锁定才能修改</span>`
-    : `<button class="btn sm" data-save-cfg="${esc(t.id)}" data-lock="0">保存</button><button class="btn sm primary" data-save-cfg="${esc(t.id)}" data-lock="1">保存并锁定</button><button class="btn sm" data-lock-only="${esc(t.id)}">锁定</button><button class="btn sm ghost" data-cancel-cfg="${esc(t.id)}">取消</button>`;
+    ? `<span class="muted" style="font-size:11px">已锁定，需先取消锁定才能修改</span>`
+    : changed
+      ? `<button class="btn sm primary" data-save-cfg="${esc(t.id)}" data-lock="0">保存</button>`
+      : '';
   return `
     <div class="pick-config" data-pick-box="${esc(t.id)}" style="display:none;margin-top:8px">
       <div class="meta" style="margin-bottom:6px">当前：${t.configured ? '<span class="badge warn-badge">手动配置</span>' : '<span class="badge gray">默认配置</span>'}${t.configured ? '' : `（跟随${isLib ? '媒体库' : '合集'}全局配置）`}</div>
@@ -709,7 +716,7 @@ function configHtml(t) {
       </div>
       <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
         <span class="muted" style="font-size:12px">选图依据</span>
-        <select data-cfg-pick="${esc(t.id)}" ${locked ? 'disabled' : ''} style="width:150px;padding:5px 8px;font-size:12px">${pickOpts}</select>
+        <div class="pick-opts" data-pick-opts="${esc(t.id)}">${pickBtns}</div>
         ${style !== 'single' ? '<span class="muted" style="font-size:11px">海报墙样式不支持手动选择</span>' : ''}
       </div>
       ${manualBlock}
@@ -722,6 +729,7 @@ function setPendingField(id, key, value) {
   if (!t) return;
   const cur = state.pendingCfg && state.pendingCfg.id === id ? state.pendingCfg : null;
   const style = key === 'style' ? value : (cur?.style || t.template || state.styles?.styleByKind?.[t.kind] || 'single');
+  if (key === 'pickBy' && value !== 'manual' && t.draftCover) t.draftCover = '';
   state.pendingCfg = {
     id,
     style,
@@ -730,6 +738,38 @@ function setPendingField(id, key, value) {
     manualItemName: cur?.manualItemName || t.manualItemName || ''
   };
   drawTargets();
+  // 切到「手动选择」时自动弹出选片窗口
+  if (key === 'pickBy' && value === 'manual') openItemPicker(id);
+  else scheduleDraft(id);
+}
+
+let draftTimer = null;
+
+function scheduleDraft(id) {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => generateDraft(id), 400);
+}
+
+async function generateDraft(id) {
+  const t = state.targets.find((x) => x.id === id);
+  const cur = state.pendingCfg && state.pendingCfg.id === id ? state.pendingCfg : null;
+  if (!t || !cur || !hasCfgChanges(t, cur)) return;
+  const body = { style: cur.style, pickBy: cur.pickBy };
+  if (cur.pickBy === 'manual') {
+    body.manualItemId = cur.manualItemId || t.manualItemId || '';
+    body.manualItemName = cur.manualItemName || t.manualItemName || '';
+    if (!body.manualItemId) return;
+  }
+  try {
+    const r = await api(`/api/targets/${encodeURIComponent(id)}/preview-draft`, { method: 'POST', body });
+    const tt = state.targets.find((x) => x.id === id);
+    if (tt && state.pendingCfg?.id === id) {
+      tt.draftCover = r.coverUrl;
+      drawTargets();
+    }
+  } catch {
+    // 预览失败时保留当前封面，不影响后续保存
+  }
 }
 
 function targetDefaultPick(t, style) {
@@ -758,6 +798,7 @@ function drawTargets() {
     if (f.cover !== 'all' && (f.cover === 'generated' ? !t.coverUrl : !t.lastError)) return false;
     return true;
   }).sort((a, b) => ((a.kind === b.kind) ? 0 : (a.kind === 'library' ? -1 : 1)) || a.name.localeCompare(b.name, 'zh-CN'));
+  state.visibleIds = new Set(list.map((t) => t.id));
   const box = $('#target-list');
   if (!list.length) {
     box.innerHTML = '<div class="empty">没有符合条件的合集</div>';
@@ -766,11 +807,14 @@ function drawTargets() {
   box.innerHTML = list.map((t) => {
     const kind = t.kind === 'library' ? '<span class="badge lib">媒体库</span>' : '<span class="badge col">合集</span>';
     const thumbStyle = t.kind === 'library' ? 'width:96px;height:54px' : 'width:56px;height:84px';
+    const thumbSrc = t.draftCover
+      ? `${esc(t.draftCover)}&v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}`
+      : `${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}`;
     const thumb = t.coverUrl
-      ? `<img class="thumb" style="${thumbStyle}" src="${esc(t.coverUrl)}?v=${encodeURIComponent(t.lastGeneratedAt || Date.now())}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
+      ? `<img class="thumb" style="${thumbStyle}" src="${thumbSrc}" alt="" title="点击预览" data-preview="${esc(t.id)}">`
       : `<div class="thumb" title="点击预览" data-preview="${esc(t.id)}" style="display:flex;align-items:center;justify-content:center;${thumbStyle}"><span class="ico-thumb">${ICO.cover}</span></div>`;
     const pickBy = t.pickBy || targetDefaultPick(t);
-    const pickLabel = pickBy === 'premiere' ? '最新发行' : pickBy === 'manual' ? '手动选择' : '最新入库';
+    const pickLabel = pickBy === 'premiere' ? '最新发行' : pickBy === 'manual' ? '手动选择' : pickBy === 'random' ? '随机' : '最新入库';
     const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
     const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount || 0} 部影片`;
     // 仅单图海报显示海报来源，海报墙样式不显示
@@ -781,8 +825,7 @@ function drawTargets() {
       : `<div class="meta">${fmtTime(t.lastGeneratedAt)} 生成 · ${pickLabel} · ${countText}</div>${sourceLine}`;
     const cfg = configHtml(t);
     return `
-      <div class="trow ${t.missing ? 'missing' : ''}">
-        <input type="checkbox" class="tick" data-id="${esc(t.id)}" ${state.selected.has(t.id) ? 'checked' : ''}>
+      <div class="trow ${t.missing ? 'missing' : ''} ${state.selected.has(t.id) ? 'selected' : ''}" data-id="${esc(t.id)}">
         ${thumb}
         <div class="info">
           <div class="name">${esc(t.name)} ${kind}${t.configured ? '<span class="badge warn-badge">手动配置</span>' : '<span class="badge gray">默认配置</span>'}${t.locked ? '<span class="badge warn-badge">已锁定</span>' : ''}${t.missing ? '<span class="badge gray">已删除</span>' : ''}</div>
@@ -791,15 +834,23 @@ function drawTargets() {
         </div>
         <div class="actions">
           <button class="btn sm primary" data-act="gen" data-id="${esc(t.id)}" ${t.locked ? 'disabled title="已锁定，需先取消锁定"' : ''}>更新</button>
+          ${state.selected.size === 1 && state.selected.has(t.id) ? `
+            <button class="btn sm" ${t.locked ? 'data-unlock' : 'data-lock-only'}="${esc(t.id)}">${t.locked ? '取消锁定' : '锁定'}</button>` : ''}
         </div>
       </div>`;
   }).join('');
 
-  box.querySelectorAll('input.tick').forEach((el) => {
-    el.onchange = () => {
-      if (el.checked) state.selected.add(el.dataset.id);
-      else state.selected.delete(el.dataset.id);
-      updateBatchUI();
+  box.querySelectorAll('.trow').forEach((row) => {
+    row.onclick = (e) => {
+      if (e.target.closest('button, a, select, input, img, .pick-opt')) return;
+      const id = row.dataset.id;
+      if (!id) return;
+      if (state.selected.has(id)) state.selected.clear();
+      else {
+        state.selected.clear();
+        state.selected.add(id);
+      }
+      drawTargets();
     };
   });
 
@@ -807,12 +858,11 @@ function drawTargets() {
     el.onchange = () => setPendingField(el.dataset.cfgStyle, 'style', el.value);
   });
 
-  box.querySelectorAll('select[data-cfg-pick]').forEach((el) => {
-    el.onchange = () => setPendingField(el.dataset.cfgPick, 'pickBy', el.value);
-  });
-
-  box.querySelectorAll('button[data-pick-manual]').forEach((el) => {
-    el.onclick = () => openItemPicker(el.dataset.pickManual);
+  box.querySelectorAll('button[data-pick-btn]').forEach((el) => {
+    el.onclick = () => {
+      const optsBox = el.closest('[data-pick-opts]');
+      if (optsBox) setPendingField(optsBox.dataset.pickOpts, 'pickBy', el.dataset.pickBtn);
+    };
   });
 
   box.querySelectorAll('button[data-save-cfg]').forEach((el) => {
@@ -824,7 +874,8 @@ function drawTargets() {
       const style = cur?.style || t.template || state.styles?.styleByKind?.[t.kind] || 'single';
       let pick = cur?.pickBy || t.pickBy || targetDefaultPick(t, style);
       if (style !== 'single') pick = 'added'; // 海报墙样式不支持手动选择
-      const withLock = el.dataset.lock === '1';
+      // 手动选择保存后自动锁定，其他选项不锁定
+      const withLock = pick === 'manual';
       const body = { template: style, pickBy: pick, locked: withLock };
       const changed = hasCfgChanges(t, cur);
       if (pick === 'manual') {
@@ -863,7 +914,6 @@ function drawTargets() {
       try {
         await api(`/api/targets/${el.dataset.lockOnly}`, { method: 'PUT', body: { locked: true } });
         state.pendingCfg = null;
-        state.selected.clear();
         toast('已锁定（停止监控）', 'ok');
         refreshTargets();
       } catch (e) {
@@ -872,21 +922,11 @@ function drawTargets() {
     };
   });
 
-  box.querySelectorAll('button[data-cancel-cfg]').forEach((el) => {
-    el.onclick = () => {
-      state.pendingCfg = null;
-      state.selected.clear();
-      refreshTargets();
-      toast('已取消修改并取消选择', 'info');
-    };
-  });
-
   box.querySelectorAll('button[data-unlock]').forEach((el) => {
     el.onclick = async () => {
       try {
         await api(`/api/targets/${el.dataset.unlock}`, { method: 'PUT', body: { locked: false } });
         state.pendingCfg = null;
-        state.selected.clear();
         toast('已取消锁定，可以修改配置', 'ok');
         refreshTargets();
       } catch (e) {
@@ -902,6 +942,7 @@ function drawTargets() {
   box.querySelectorAll('button[data-act="gen"]').forEach((el) => {
     el.onclick = async () => {
       el.disabled = true;
+      el.style.minWidth = `${el.offsetWidth}px`;
       el.innerHTML = '<span class="spinner"></span>';
       try {
         const r = await api(`/api/targets/${el.dataset.id}/generate`, { method: 'POST', body: {} });
@@ -935,14 +976,17 @@ function updateBatchUI() {
     const el = document.getElementById(id);
     if (el) el.disabled = n === 0;
   });
-  const all = document.querySelectorAll('#target-list input.tick');
   const selAll = $('#sel-all');
-  if (selAll && all.length) {
-    selAll.checked = all.length === document.querySelectorAll('#target-list input.tick:checked').length;
-    selAll.disabled = all.length === 0;
+  if (selAll) {
+    selAll.checked = state.visibleIds.size > 0 && [...state.visibleIds].every((id) => state.selected.has(id));
+    selAll.disabled = state.visibleIds.size === 0;
   }
-  if (n !== 1) state.pendingCfg = null;
-  else if (state.pendingCfg && !state.selected.has(state.pendingCfg.id)) state.pendingCfg = null;
+  if (n !== 1 || (state.pendingCfg && !state.selected.has(state.pendingCfg.id))) {
+    state.pendingCfg = null;
+    (state.targets || []).forEach((t) => {
+      t.draftCover = '';
+    });
+  }
   document.querySelectorAll('.pick-config').forEach((el) => {
     el.style.display = (n === 1 && state.selected.has(el.dataset.pickBox)) ? '' : 'none';
   });
@@ -951,12 +995,9 @@ function updateBatchUI() {
 function bindBatch() {
   $('#sel-all').onchange = () => {
     const checked = $('#sel-all').checked;
-    document.querySelectorAll('#target-list input.tick').forEach((el) => {
-      el.checked = checked;
-      if (checked) state.selected.add(el.dataset.id);
-      else state.selected.delete(el.dataset.id);
-    });
-    updateBatchUI();
+    if (checked) [...state.visibleIds].forEach((id) => state.selected.add(id));
+    else state.selected.clear();
+    drawTargets();
   };
   $('#batch-enable').onclick = () => batchAction('enable');
   $('#batch-disable').onclick = () => batchAction('disable');
@@ -1135,7 +1176,7 @@ function showPreview(id) {
 async function openItemPicker(id) {
   openModal(`
     <div class="modal-head"><h3>选择封面影片</h3><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
-    <p class="modal-note">点击任意影片，将其海报作为该合集封面，保存配置后生效。</p>
+    <p class="modal-note">点击任意影片，将其海报作为该合集封面。选择后先本地预览，点「保存」或「保存并锁定」才会上传 Emby。</p>
     <div class="picker-grid" id="picker-grid"><div class="empty">加载中…</div></div>
   `);
   let items = [];
@@ -1171,8 +1212,25 @@ async function openItemPicker(id) {
           manualItemName: el.dataset.name
         };
         closeModal();
-        drawTargets();
-        toast('已选择封面影片，点击保存后生效', 'ok');
+        toast('正在本地生成封面预览…', 'info');
+        try {
+          const r = await api(`/api/targets/${encodeURIComponent(id)}/preview-draft`, {
+            method: 'POST',
+            body: {
+              style: state.pendingCfg?.style || 'single',
+              pickBy: 'manual',
+              manualItemId: el.dataset.pid,
+              manualItemName: el.dataset.name
+            }
+          });
+          const t = state.targets.find((x) => x.id === id);
+          if (t) t.draftCover = r.coverUrl;
+          drawTargets();
+          toast('已生成本地预览，点「保存」后上传 Emby', 'ok');
+        } catch (e) {
+          drawTargets();
+          toast(`预览生成失败：${e.message}`, 'err');
+        }
       } catch (e) {
         toast(e.message, 'err');
       }
@@ -1310,41 +1368,70 @@ async function renderSettings() {
 
     <div class="panel">
       <h3>封面配置</h3>
-      <div class="cfg-wrap" style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start">
+      <div class="cfg-wrap" style="display:flex;gap:28px;align-items:flex-start">
         <div class="cfg-left" style="flex:1;min-width:280px">
-          <div class="row" style="gap:14px;flex-wrap:wrap;align-items:center">
-            <div class="seg" id="cfg-kind">
+          <div class="cfg-sec">
+            <div class="cfg-title">配置类型</div>
+            <div class="cfg-opt"><div class="seg" id="cfg-kind">
               <button class="seg-btn active" data-group="library-single">媒体库·单图海报</button>
               <button class="seg-btn" data-group="library-wall3">媒体库·海报墙</button>
               <button class="seg-btn" data-group="collection-single">合集·单图海报</button>
+            </div></div>
+            <div class="cfg-hint">三套配置互相独立，切换后各自保存</div>
+          </div>
+          <div class="cfg-sec" id="cfg-lib-default-sec">
+            <div class="cfg-title">未单独配置的媒体库默认样式</div>
+            <div class="cfg-opt"><div class="pick-opts" id="cfg-lib-default-opts">
+              <button class="pick-opt ${(s.styleByKind?.library || 'single') === 'single' ? 'active' : ''}" data-lib-style="single">单图海报</button>
+              <button class="pick-opt ${s.styleByKind?.library === 'wall3' ? 'active' : ''}" data-lib-style="wall3">海报墙</button>
+            </div></div>
+            <div class="cfg-hint">默认配置（未单独设置）的媒体库使用此样式</div>
+          </div>
+          <div class="cfg-sec">
+            <div class="cfg-title">选图依据（单图海报）</div>
+            <div class="cfg-opt"><div class="pick-opts" id="cfg-pick-opts">
+              <button class="pick-opt" data-global-pick="added">最新入库</button>
+              <button class="pick-opt" data-global-pick="premiere">最新发行</button>
+              <button class="pick-opt" data-global-pick="random">随机</button>
+            </div></div>
+            <div class="cfg-hint">单图海报样式按此依据挑选要展示的海报</div>
+          </div>
+          <div class="cfg-sec">
+            <div class="cfg-title">背景模式</div>
+            <div class="cfg-opt"><div class="pick-opts" id="cfg-bg-opts">
+              <button class="pick-opt" data-bg="gradient">渐变色</button>
+              <button class="pick-opt" data-bg="poster">海报渐变模糊</button>
+            </div></div>
+            <div class="row" id="cfg-bg-gradient-fields" style="gap:16px;flex-wrap:wrap;margin-top:8px">
+              <label class="field"><span class="lab">背景顶部</span><input type="color" id="set-bgTop" value="${c.bgTop}"></label>
+              <label class="field"><span class="lab">背景底部</span><input type="color" id="set-bgBottom" value="${c.bgBottom}"></label>
             </div>
-            <label class="field" id="cfg-lib-default-field" style="max-width:260px"><span class="lab">未单独配置的媒体库默认样式</span>
-              <select id="set-lib-default-style">
-                <option value="single" ${(s.styleByKind?.library || 'single') === 'single' ? 'selected' : ''}>单图海报</option>
-                <option value="wall3" ${s.styleByKind?.library === 'wall3' ? 'selected' : ''}>海报墙</option>
-              </select>
-            </label>
+            <div class="cfg-hint">海报模式：从展示的海报取色并模糊作为背景</div>
           </div>
-          <div class="row" style="gap:22px;align-items:flex-start;margin-top:10px">
-            <label class="field" style="max-width:320px"><span class="lab">选图依据（单图海报）</span>
-              <select id="set-cfg-pickBy">
-                <option value="added" ${state.cfgDraft['library-single'].pickBy === 'premiere' ? '' : 'selected'}>加入时间（最新入库）</option>
-                <option value="premiere" ${state.cfgDraft['library-single'].pickBy === 'premiere' ? 'selected' : ''}>发行时间（最新发行）</option>
-              </select>
-              <span class="hint">单图海报样式按此依据挑选要展示的海报</span>
-            </label>
+          <div class="cfg-sec">
+            <div class="cfg-title">字号</div>
+            <div class="cfg-opt"><div class="row" style="gap:16px;flex-wrap:wrap">
+              <label class="field"><span class="lab">标题字号</span><input type="number" id="set-titleSize" value="${c.titleSize}" min="18" max="480"></label>
+              <label class="field"><span class="lab">副标题字号</span><input type="number" id="set-subtitleSize" value="${c.subtitleSize}" min="12" max="240"></label>
+            </div></div>
+            <div class="cfg-hint">按输出宽度等比缩放</div>
           </div>
-          <div class="row" style="gap:22px;align-items:flex-start;margin-top:10px">
-            <label class="field" style="max-width:320px"><span class="lab">背景模式</span>
-              <select id="set-backgroundMode">
-                <option value="gradient" ${(c.backgroundMode || 'gradient') === 'gradient' ? 'selected' : ''}>渐变色（自定义上下色）</option>
-                <option value="poster" ${c.backgroundMode === 'poster' ? 'selected' : ''}>海报渐变模糊色</option>
-              </select>
-              <span class="hint">海报模式：从展示的海报取色并模糊作为背景</span>
-            </label>
+          <div class="cfg-sec">
+            <div class="cfg-title">颜色</div>
+            <div class="cfg-opt"><div class="row" style="gap:16px;flex-wrap:wrap">
+              <label class="field"><span class="lab">强调色</span><input type="color" id="set-accent" value="${c.accent}"></label>
+              <label class="field"><span class="lab">标题颜色</span><input type="color" id="set-titleColor" value="${c.titleColor}"></label>
+              <label class="field"><span class="lab">副标题颜色</span><input type="color" id="set-subtitleColor" value="${c.subtitleColor}"></label>
+            </div></div>
+            <div class="cfg-hint">标题下横线、标题与副标题文字颜色</div>
+          </div>
+          <div class="cfg-sec">
+            <div class="cfg-title">其他</div>
+            <div class="cfg-opt"><label class="row" style="gap:8px"><input type="checkbox" id="set-showCount" ${c.showCount ? 'checked' : ''}> 封面显示影片数量副标题</label></div>
+            <div class="cfg-hint">如「共 18 部影片」</div>
           </div>
         </div>
-        <div class="cfg-right" style="width:360px;flex-shrink:0">
+        <div class="cfg-right" style="width:360px;flex-shrink:0;position:sticky;top:16px">
           <div class="lab">实时预览（当前所选类型）</div>
           <label class="field" style="margin-top:6px"><span class="lab">预览数据来源</span>
             <select id="cfg-preview-source">
@@ -1356,34 +1443,13 @@ async function renderSettings() {
             <img id="cfg-preview" alt="封面预览" style="width:360px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--panel-2);display:block">
             <div id="cfg-preview-loading" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(10,15,28,0.55);border-radius:10px;color:#fff;font-size:13px">生成中…</div>
           </div>
+          <div class="row mt" style="gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn" id="btn-save-cover">保存封面设置</button>
+            <button class="btn primary" id="btn-save-regen">保存并重新生成当前配置封面</button>
+          </div>
+          <span class="status-line" id="save-cover-result"></span>
         </div>
       </div>
-      <div class="cfg-below mt">
-        <div class="grid-2">
-          <label class="field"><span class="lab">标题字号</span><input type="number" id="set-titleSize" value="${c.titleSize}" min="18" max="480"></label>
-          <label class="field"><span class="lab">副标题字号</span><input type="number" id="set-subtitleSize" value="${c.subtitleSize}" min="12" max="240"></label>
-        </div>
-        <div class="grid-2 mt" id="cfg-bg-gradient-fields">
-          <label class="field"><span class="lab">背景顶部</span><input type="color" id="set-bgTop" value="${c.bgTop}"></label>
-          <label class="field"><span class="lab">背景底部</span><input type="color" id="set-bgBottom" value="${c.bgBottom}"></label>
-        </div>
-        <div class="grid-4 mt">
-          <label class="field"><span class="lab">强调色</span><input type="color" id="set-accent" value="${c.accent}"></label>
-          <label class="field"><span class="lab">标题颜色</span><input type="color" id="set-titleColor" value="${c.titleColor}"></label>
-          <label class="field"><span class="lab">副标题颜色</span><input type="color" id="set-subtitleColor" value="${c.subtitleColor}"></label>
-        </div>
-        <div class="grid-3 mt">
-          <label class="field"><span class="lab">字体（Pango 名称）</span><input type="text" id="set-fontFamily" value="${esc(c.fontFamily)}"></label>
-          <label class="field"><span class="lab">字体文件路径（可选）</span><input type="text" id="set-fontFile" value="${esc(c.fontFile)}" placeholder="留空自动查找系统字体"></label>
-        </div>
-        <label class="row" style="gap:8px;margin-top:8px"><input type="checkbox" id="set-showCount" ${c.showCount ? 'checked' : ''}> 封面显示影片数量副标题</label>
-      </div>
-      <div class="row mt" style="gap:10px;align-items:center;flex-wrap:wrap">
-        <button class="btn" id="btn-save-cover">保存封面设置</button>
-        <button class="btn primary" id="btn-save-regen">保存并重新生成当前配置封面</button>
-        <span class="status-line" id="save-cover-result"></span>
-      </div>
-      <p class="muted" style="font-size:12px;margin-top:8px">媒体库·单图海报、媒体库·海报墙、合集·单图海报三套配置互相独立；「保存并重新生成当前配置封面」只重新生成使用当前配置且未锁定的封面。</p>
     </div>
 
     <div class="panel">
@@ -1414,7 +1480,7 @@ async function renderSettings() {
     const g = state.cfgGroup;
     state.cfgDraft[g] = {
       style: g.endsWith('-wall3') ? 'wall3' : 'single',
-      pickBy: $('#set-cfg-pickBy')?.value || 'added',
+      pickBy: document.querySelector('#cfg-pick-opts .pick-opt.active')?.dataset.globalPick || 'added',
       cover: {
         titleSize: Number($('#set-titleSize').value),
         subtitleSize: Number($('#set-subtitleSize').value),
@@ -1423,9 +1489,7 @@ async function renderSettings() {
         accent: $('#set-accent').value,
         titleColor: $('#set-titleColor').value,
         subtitleColor: $('#set-subtitleColor').value,
-        fontFamily: $('#set-fontFamily').value.trim(),
-        fontFile: $('#set-fontFile').value.trim(),
-        backgroundMode: $('#set-backgroundMode').value,
+        backgroundMode: document.querySelector('#cfg-bg-opts .pick-opt.active')?.dataset.bg || 'gradient',
         showCount: $('#set-showCount').checked
       }
     };
@@ -1433,8 +1497,10 @@ async function renderSettings() {
 
   function applyDraftToDom(g) {
     const d = state.cfgDraft[g];
-    if (!$('#set-cfg-pickBy')) return;
-    $('#set-cfg-pickBy').value = d.pickBy;
+    if (!$('#cfg-pick-opts')) return;
+    document.querySelectorAll('#cfg-pick-opts .pick-opt').forEach((b) => {
+      b.classList.toggle('active', b.dataset.globalPick === d.pickBy);
+    });
     $('#set-titleSize').value = d.cover.titleSize;
     $('#set-subtitleSize').value = d.cover.subtitleSize;
     $('#set-bgTop').value = d.cover.bgTop;
@@ -1442,12 +1508,12 @@ async function renderSettings() {
     $('#set-accent').value = d.cover.accent;
     $('#set-titleColor').value = d.cover.titleColor;
     $('#set-subtitleColor').value = d.cover.subtitleColor;
-    $('#set-fontFamily').value = d.cover.fontFamily;
-    $('#set-fontFile').value = d.cover.fontFile || '';
-    $('#set-backgroundMode').value = d.cover.backgroundMode || 'gradient';
+    document.querySelectorAll('#cfg-bg-opts .pick-opt').forEach((b) => {
+      b.classList.toggle('active', b.dataset.bg === (d.cover.backgroundMode || 'gradient'));
+    });
     $('#set-showCount').checked = d.cover.showCount !== false;
     syncBgFields();
-    const dsf = $('#cfg-lib-default-field');
+    const dsf = $('#cfg-lib-default-sec');
     if (dsf) dsf.style.display = g.startsWith('library') ? '' : 'none';
     updatePreviewSourceOptions(g.startsWith('library') ? 'library' : 'collection');
     document.querySelectorAll('#cfg-kind .seg-btn').forEach((x) => {
@@ -1486,7 +1552,7 @@ async function renderSettings() {
     const q = new URLSearchParams({
       style,
       size,
-      backgroundMode: $('#set-backgroundMode').value,
+      backgroundMode: document.querySelector('#cfg-bg-opts .pick-opt.active')?.dataset.bg || 'gradient',
       title: kind === 'library' ? '媒体库' : '合集',
       showCount: $('#set-showCount').checked ? '1' : '0',
       titleSize: $('#set-titleSize').value,
@@ -1496,13 +1562,11 @@ async function renderSettings() {
       accent: $('#set-accent').value,
       titleColor: $('#set-titleColor').value,
       subtitleColor: $('#set-subtitleColor').value,
-      fontFamily: $('#set-fontFamily').value.trim(),
-      fontFile: $('#set-fontFile').value.trim()
     });
     const source = $('#cfg-preview-source')?.value || '';
     if (source) {
       q.set('targetId', source);
-      q.set('pickBy', $('#set-cfg-pickBy')?.value || 'added');
+      q.set('pickBy', document.querySelector('#cfg-pick-opts .pick-opt.active')?.dataset.globalPick || 'added');
     }
     const img = $('#cfg-preview');
     if (img) {
@@ -1521,13 +1585,31 @@ async function renderSettings() {
       pre.src = url;
     }
   }
-  ['#set-cfg-pickBy', '#cfg-preview-source', '#set-backgroundMode', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor', '#set-fontFamily', '#set-fontFile'].forEach((sel) => {
+  ['#cfg-preview-source', '#set-titleSize', '#set-subtitleSize', '#set-showCount', '#set-bgTop', '#set-bgBottom', '#set-accent', '#set-titleColor', '#set-subtitleColor'].forEach((sel) => {
     const el = document.querySelector(sel);
     if (!el) return;
     el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
       clearTimeout(cfgPreviewTimer);
       cfgPreviewTimer = setTimeout(refreshCfgPreview, 350);
     });
+  });
+  document.querySelectorAll('#cfg-pick-opts .pick-opt').forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll('#cfg-pick-opts .pick-opt').forEach((x) => x.classList.toggle('active', x === b));
+    };
+  });
+  document.querySelectorAll('#cfg-bg-opts .pick-opt').forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll('#cfg-bg-opts .pick-opt').forEach((x) => x.classList.toggle('active', x === b));
+      syncBgFields();
+      clearTimeout(cfgPreviewTimer);
+      cfgPreviewTimer = setTimeout(refreshCfgPreview, 200);
+    };
+  });
+  document.querySelectorAll('#cfg-lib-default-opts .pick-opt').forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll('#cfg-lib-default-opts .pick-opt').forEach((x) => x.classList.toggle('active', x === b));
+    };
   });
   refreshCfgPreview();
 
@@ -1635,17 +1717,16 @@ async function renderSettings() {
   updateAutoStatus();
 
   function syncBgFields() {
-    const poster = $('#set-backgroundMode').value === 'poster';
+    const poster = document.querySelector('#cfg-bg-opts .pick-opt.active')?.dataset.bg === 'poster';
     const wrap = $('#cfg-bg-gradient-fields');
     if (wrap) wrap.style.display = poster ? 'none' : '';
   }
-  $('#set-backgroundMode').onchange = syncBgFields;
   syncBgFields();
 
   function collectCoverBody() {
     saveDraftFromDom();
     return {
-      styleByKind: { library: $('#set-lib-default-style').value, collection: 'single' },
+      styleByKind: { library: document.querySelector('#cfg-lib-default-opts .pick-opt.active')?.dataset.libStyle || 'single', collection: 'single' },
       defaultPickByByStyle: {
         'library-single': state.cfgDraft['library-single'].pickBy,
         'library-wall3': state.cfgDraft['library-wall3'].pickBy,
@@ -1828,7 +1909,6 @@ async function renderLogs() {
     </div>`;
 
   const TYPE_LABEL = { single: '单张生成', batch: '批量更新', sync: '全量同步', precise: '精准更新' };
-  const TRIGGER_LABEL = { manual: '手动', batch: '批量操作', scheduler: '定时任务', webhook: 'Webhook', startup: '服务启动', resume: '继续任务', enable: '启用合集' };
 
   const taskTable = createDataTable({
     el: $('#task-table'),

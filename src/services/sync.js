@@ -29,9 +29,11 @@ function taskRecord({ name, type, trigger, status, updated = 0, unchanged = 0, f
 
 function effectivePickBy(target, settings) {
   if (target?.pickBy === 'manual') return 'manual';
+  if (target?.pickBy === 'random') return 'random';
   if (target?.pickBy === 'premiere') return 'premiere';
   if (target?.pickBy === 'added') return 'added';
-  return settings.defaultPickByByStyle?.[`${target.kind}-${effectiveStyleOf(target, settings)}`] === 'premiere' ? 'premiere' : 'added';
+  const def = settings.defaultPickByByStyle?.[`${target.kind}-${effectiveStyleOf(target, settings)}`] || 'added';
+  return ['premiere', 'random'].includes(def) ? def : 'added';
 }
 
 function effectiveStyleOf(target, settings) {
@@ -129,6 +131,8 @@ export function createSyncService(store) {
       const manual = withPrimaryAll.find((i) => i.id === String(manualItemId));
       // 手动选择的影片已不存在或无封面时，回退为最新入库
       sorted = manual ? [manual] : sortByPick(withPrimaryAll, 'added');
+    } else if (pickBy === 'random') {
+      sorted = withPrimaryAll.length ? [withPrimaryAll[Math.floor(Math.random() * withPrimaryAll.length)]] : [];
     } else {
       sorted = sortByPick(raw, pickBy);
     }
@@ -139,7 +143,7 @@ export function createSyncService(store) {
       const poster = await cachedPoster(client, item.id, posterW, item.imageTag);
       return poster ? { ...item, poster } : null;
     }, shouldStop);
-    return { posters: withPosters.filter(Boolean), total: withPrimaryAll.length };
+    return { posters: withPosters.filter(Boolean), total: withPrimaryAll.length, chosen: withPrimary[0] || null };
   }
 
   async function buildCover(target, posters, genSettings, style, totalCount = posters.length) {
@@ -201,6 +205,7 @@ export function createSyncService(store) {
       png = await buildCover(target, posters, genSettings, style, total);
     }
     await fs.writeFile(localFile, png);
+    fs.unlink(path.join(COVERS_DIR, `${target.id}.draft.png`)).catch(() => {});
     const now = new Date().toISOString();
     const basePatch = {
       itemHash: hash,
@@ -459,7 +464,7 @@ export function createSyncService(store) {
   }
 
   // 用指定配置（样式/选图依据/封面元素设置）渲染某个真实媒体库或合集的预览
-  async function previewWithSettings(id, { style = 'single', cover = {}, pickBy = 'added' } = {}) {
+  async function previewWithSettings(id, { style = 'single', cover = {}, pickBy = 'added', manualItemId = '' } = {}) {
     const target = store.getTarget(id);
     if (!target) throw new Error('目标不存在');
     const client = await getClient();
@@ -467,8 +472,8 @@ export function createSyncService(store) {
     const size = resolveSize(target, store.settings);
     const genSettings = { ...cover, width: size.width, height: size.height };
     const { posters, total } = await collectPosters(target, client, genSettings, {
-      pickBy: pickBy === 'premiere' ? 'premiere' : 'added',
-      manualItemId: target.manualItemId,
+      pickBy: ['premiere', 'manual', 'random'].includes(pickBy) ? pickBy : 'added',
+      manualItemId: manualItemId || target.manualItemId,
       need: posterNeed(style)
     });
     if (!posters.length) throw new Error('未找到任何带封面的影片');

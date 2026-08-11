@@ -347,7 +347,9 @@ input[type="color"] {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 16px;
+  cursor: pointer;
 }
+.trow.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .trow .thumb {
   width: 56px;
   height: 84px;
@@ -366,7 +368,7 @@ input[type="color"] {
 .trow .name { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .trow .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .trow .err { color: var(--err); font-size: 12px; margin-top: 2px; }
-.trow .actions { display: flex; gap: 8px; align-items: center; }
+.trow .actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 .trow.missing { opacity: 0.55; }
 
 .badge {
@@ -673,6 +675,23 @@ input[type="color"] {
   overflow: hidden;
 }
 .picker-item:hover { border-color: var(--accent); }
+.pick-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.pick-opt {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.pick-opt:hover { border-color: var(--accent); }
+.pick-opt.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.pick-opt:disabled { opacity: 0.5; cursor: not-allowed; }
+.cfg-sec { margin-bottom: 16px; }
+.cfg-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.cfg-opt { margin-bottom: 4px; }
+.cfg-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
 .muted { color: var(--muted); }
 .mt { margin-top: 14px; }
