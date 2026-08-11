@@ -1,6 +1,6 @@
 {
   "name": "emby-cover-studio",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Emby 媒体库/合集封面自动生成工具：根据影片封面与库名合成封面，支持 Webhook 自动更新与定时更新，Docker 一键部署",
   "type": "module",
   "main": "src/server.js",
