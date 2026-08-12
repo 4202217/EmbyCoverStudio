@@ -1,19 +1,41 @@
 {
   "name": "emby-cover-studio",
   "version": "1.4.0",
-  "description": "Emby 媒体库/合集封面自动生成工具：根据影片封面与库名合成封面，支持 Webhook 自动更新与定时更新，Docker 一键部署",
+  "description": "Emby 媒体库/合集封面自动生成工具",
+  "private": true,
   "type": "module",
-  "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "mock": "node scripts/mock-emby.js",
-    "demo": "node scripts/demo-cover.js",
-    "test": "node scripts/test-integration.js"
+    "test": "node scripts/test-integration.js",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "sharp": "^0.34.5"
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.446.0",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.34.5",
+    "tailwind-merge": "^2.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.6.3"
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true
   }
 }
