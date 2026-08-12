@@ -449,13 +449,13 @@ export default function SettingsPage() {
                     </option>
                   ))}
               </Select>
-              <div className="relative h-64 w-full overflow-hidden rounded-lg border bg-muted/30">
+              <div className="relative flex h-64 w-full items-center justify-center overflow-hidden rounded-lg border bg-muted/30 p-2">
                 {previewSrc ? (
                   <img
                     key={previewSrc}
                     src={previewSrc}
                     alt="封面预览"
-                    className="absolute inset-0 h-full w-full animate-in fade-in object-contain duration-200 p-1.5"
+                    className="h-auto max-h-full w-auto max-w-full animate-in fade-in rounded-lg border object-contain duration-200"
                   />
                 ) : null}
                 {loading ? (
