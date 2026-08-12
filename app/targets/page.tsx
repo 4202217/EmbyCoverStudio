@@ -93,6 +93,10 @@ export default function TargetsPage() {
       const [t, s] = await Promise.all([api<{ targets: Target[] }>('/api/targets'), api<Styles>('/api/styles')]);
       setTargets(t.targets);
       setStyles(s);
+      setSelected((sel) => {
+        const ids = new Set(t.targets.map((x) => x.id));
+        return new Set([...sel].filter((id) => ids.has(id)));
+      });
     } catch {
       // ignore
     } finally {
