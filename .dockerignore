@@ -6,3 +6,5 @@ data
 .DS_Store
 scripts
 README.md
+.next
+legacy-public
