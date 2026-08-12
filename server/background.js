@@ -13,7 +13,7 @@ export function startBackground() {
     const expr = store.settings.cron || '0 */6 * * *';
     try {
       parseCron(expr);
-      scheduler.clear('cover-sync');
+      scheduler.remove('cover-sync');
       scheduler.add('cover-sync', expr, () => syncService.runSync({ reason: '定时任务' }));
       info(`定时任务已设置：${expr}`);
     } catch {

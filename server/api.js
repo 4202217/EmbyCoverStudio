@@ -53,7 +53,7 @@ export function createApi(app) {
     const expr = store.settings.cron || '0 */6 * * *';
     try {
       parseCron(expr);
-      app.scheduler.clear('cover-sync');
+      app.scheduler.remove('cover-sync');
       app.scheduler.add('cover-sync', expr, () => syncService.runSync({ reason: '定时任务' }));
       info(`定时任务已设置：${expr}`);
     } catch {
