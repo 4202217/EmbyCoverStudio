@@ -92,10 +92,69 @@ export function Sidebar({ version }: { version: string }) {
               <h2 className="text-sm font-semibold">更新记录</h2>
               <button className="text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>✕</button>
             </div>
-            <pre className="whitespace-pre-wrap text-xs leading-relaxed">{changelog || '加载中…'}</pre>
+            <div className="max-h-[60vh] overflow-auto text-xs leading-relaxed">{changelog ? <Markdown text={changelog} /> : '加载中…'}</div>
           </div>
         </div>
       ) : null}
     </aside>
   );
+}
+
+function Markdown({ text }: { text: string }) {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = (s: string) => {
+    // **粗体** 与 `行内代码`
+    const parts = s.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+    return parts.map((p, i) => {
+      if (p.startsWith('**') && p.endsWith('**') && p.length > 4) {
+        return <strong key={i}>{p.slice(2, -2)}</strong>;
+      }
+      if (p.startsWith('`') && p.endsWith('`') && p.length > 2) {
+        return (
+          <code key={i} className="rounded bg-muted px-1 py-0.5 font-mono">
+            {p.slice(1, -1)}
+          </code>
+        );
+      }
+      return <span key={i}>{p}</span>;
+    });
+  };
+
+  const blocks: React.ReactNode[] = [];
+  let list: string[] = [];
+  const flushList = () => {
+    if (!list.length) return;
+    blocks.push(
+      <ul key={blocks.length} className="my-1.5 space-y-1 pl-4">
+        {list.map((li, i) => (
+          <li key={i} className="list-disc">{inline(li)}</li>
+        ))}
+      </ul>
+    );
+    list = [];
+  };
+
+  text.split('\n').forEach((raw) => {
+    const line = esc(raw);
+    if (/^###\s+/.test(line)) {
+      flushList();
+      blocks.push(<h4 key={blocks.length} className="mt-3 mb-1 font-semibold">{inline(line.replace(/^###\s+/, ''))}</h4>);
+    } else if (/^##\s+/.test(line)) {
+      flushList();
+      blocks.push(<h3 key={blocks.length} className="mt-4 mb-1.5 text-sm font-bold">{inline(line.replace(/^##\s+/, ''))}</h3>);
+    } else if (/^#\s+/.test(line)) {
+      flushList();
+      blocks.push(<h2 key={blocks.length} className="mt-4 mb-1.5 text-base font-bold">{inline(line.replace(/^#\s+/, ''))}</h2>);
+    } else if (/^\s*[-*]\s+/.test(line)) {
+      list.push(line.replace(/^\s*[-*]\s+/, ''));
+    } else if (!line.trim()) {
+      flushList();
+    } else {
+      flushList();
+      blocks.push(<p key={blocks.length} className="my-1">{inline(line)}</p>);
+    }
+  });
+  flushList();
+  return <>{blocks}</>;
 }
