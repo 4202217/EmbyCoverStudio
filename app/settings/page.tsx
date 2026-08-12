@@ -184,6 +184,22 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-3">
+            {group.startsWith('library') ? (
+              <div>
+                <div className="mb-1.5 text-xs font-semibold text-muted-foreground">未单独配置的媒体库默认样式</div>
+                <div className="flex gap-1.5">
+                  {['single', 'wall3'].map((st) => (
+                    <button
+                      key={st}
+                      className={cn('rounded-md border px-2.5 py-1 text-xs hover:border-primary', (draft.styleByKind?.library || 'single') === st ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
+                      onClick={() => setDraft({ ...draft, styleByKind: { ...(draft.styleByKind || {}), library: st } })}
+                    >
+                      {st === 'single' ? '单图海报' : '海报墙'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div>
               <div className="mb-1.5 text-xs font-semibold text-muted-foreground">选图依据</div>
               <div className="flex gap-1.5">
@@ -212,6 +228,18 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
+            {(cur.backgroundMode || 'gradient') === 'gradient' ? (
+              <div className="flex flex-wrap gap-3">
+                <label className="flex items-center gap-2 text-xs">
+                  背景顶部
+                  <input type="color" value={cur.bgTop || '#17233d'} onChange={(e) => setGroupDraft({ bgTop: e.target.value })} />
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  背景底部
+                  <input type="color" value={cur.bgBottom || '#0a0f1c'} onChange={(e) => setGroupDraft({ bgBottom: e.target.value })} />
+                </label>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <div className="mb-1 text-xs text-muted-foreground">标题字号</div>
@@ -222,10 +250,29 @@ export default function SettingsPage() {
                 <Input type="number" value={cur.subtitleSize ?? 36} onChange={(e) => setGroupDraft({ subtitleSize: Number(e.target.value) })} />
               </div>
             </div>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-xs">
+                强调色
+                <input type="color" value={cur.accent || '#00a4dc'} onChange={(e) => setGroupDraft({ accent: e.target.value })} />
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                标题颜色
+                <input type="color" value={cur.titleColor || '#ffffff'} onChange={(e) => setGroupDraft({ titleColor: e.target.value })} />
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                副标题颜色
+                <input type="color" value={cur.subtitleColor || '#c9d6f2'} onChange={(e) => setGroupDraft({ subtitleColor: e.target.value })} />
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                <Switch checked={cur.showCount !== false} onCheckedChange={(v) => setGroupDraft({ showCount: v })} />
+                显示数量副标题
+              </label>
+            </div>
           </div>
           <Button
             onClick={() =>
               save({
+                styleByKind: draft.styleByKind,
                 defaultPickByByStyle: draft.defaultPickByByStyle,
                 coverByStyle: draft.coverByStyle
               })
@@ -263,6 +310,21 @@ export default function SettingsPage() {
               <Input type="number" className="w-20" value={webdav.webdavIntervalHours ?? 24} onChange={(e) => setDraft({ ...draft, webdavIntervalHours: Number(e.target.value) })} />
               小时
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
+              <span className="text-muted-foreground">同步内容：</span>
+              <label className="flex items-center gap-1.5">
+                <Switch checked={webdav.webdavSync?.settings !== false} onCheckedChange={(v) => setDraft({ ...draft, webdavSync: { ...(webdav.webdavSync || {}), settings: v } })} />
+                设置（含密钥）
+              </label>
+              <label className="flex items-center gap-1.5">
+                <Switch checked={webdav.webdavSync?.targets !== false} onCheckedChange={(v) => setDraft({ ...draft, webdavSync: { ...(webdav.webdavSync || {}), targets: v } })} />
+                媒体库/合集配置
+              </label>
+              <label className="flex items-center gap-1.5">
+                <Switch checked={webdav.webdavSync?.tasks !== false} onCheckedChange={(v) => setDraft({ ...draft, webdavSync: { ...(webdav.webdavSync || {}), tasks: v } })} />
+                任务记录
+              </label>
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -274,7 +336,8 @@ export default function SettingsPage() {
                     webdavPassword: draft.webdavPassword,
                     webdavFile: draft.webdavFile,
                     webdavAutoBackup: draft.webdavAutoBackup,
-                    webdavIntervalHours: draft.webdavIntervalHours
+                    webdavIntervalHours: draft.webdavIntervalHours,
+                    webdavSync: draft.webdavSync
                   })
                 }
               >

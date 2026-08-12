@@ -17,6 +17,7 @@ const NAV = [
 export function Sidebar({ version }: { version: string }) {
   const pathname = usePathname();
   const [changelog, setChangelog] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     fetch('/api/changelog')
@@ -59,11 +60,20 @@ export function Sidebar({ version }: { version: string }) {
           已连接 Emby
         </div>
       </div>
-      <Button variant="link" className="h-auto justify-start px-1 text-xs text-muted-foreground" onClick={() => {
-        if (changelog) window.alert(changelog);
-      }}>
+      <Button variant="link" className="h-auto justify-start px-1 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
         v{version}
       </Button>
+      {open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(false)}>
+          <div className="max-h-[75vh] w-full max-w-lg overflow-auto rounded-lg border bg-card p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">更新记录</h2>
+              <button className="text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>✕</button>
+            </div>
+            <pre className="whitespace-pre-wrap text-xs leading-relaxed">{changelog || '加载中…'}</pre>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }

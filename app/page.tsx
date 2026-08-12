@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -246,10 +246,48 @@ export default function DashboardPage() {
 }
 
 function RecentRow({ title, items, wide }: { title: string; items: Target[]; wide?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY + e.deltaX;
+    };
+    let dragging = false;
+    let startX = 0;
+    let startLeft = 0;
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX;
+      startLeft = el.scrollLeft;
+      el.style.cursor = 'grabbing';
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!dragging) return;
+      el.scrollLeft = startLeft - (e.clientX - startX);
+    };
+    const onUp = () => {
+      dragging = false;
+      el.style.cursor = '';
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
   return (
     <div>
       <div className="mb-2 text-xs font-semibold text-muted-foreground">{title}</div>
-      <ScrollArea className="flex gap-3">
+      <ScrollArea ref={ref} className="cursor-grab">
         <div className="flex gap-3">
           {items.map((t) => (
             <div key={t.id} className={cn('shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')}>

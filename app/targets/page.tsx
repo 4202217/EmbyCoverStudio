@@ -55,6 +55,7 @@ export default function TargetsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [pending, setPending] = useState<{ style: string; pickBy: string; manualItemId: string; manualItemName: string } | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const load = async () => {
     try {
@@ -69,6 +70,29 @@ export default function TargetsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  // 修改配置后生成本地草稿预览（不推送 Emby）
+  useEffect(() => {
+    if (!selected || !pending) return;
+    const timer = setTimeout(async () => {
+      try {
+        const body: Record<string, unknown> = { style: pending.style, pickBy: pending.pickBy };
+        if (pending.pickBy === 'manual') {
+          if (!pending.manualItemId) return;
+          body.manualItemId = pending.manualItemId;
+          body.manualItemName = pending.manualItemName;
+        }
+        const r = await api<{ coverUrl: string }>(`/api/targets/${selected}/preview-draft`, {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+        setDrafts((d) => ({ ...d, [selected]: r.coverUrl }));
+      } catch {
+        // 预览失败时保留当前封面
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [pending, selected]);
 
   const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || styles.styleByKind?.library || 'single');
   const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${effStyle(t)}`] || 'added';
@@ -101,14 +125,19 @@ export default function TargetsPage() {
 
   const saveConfig = async (t: Target) => {
     if (!pending) return;
-    const body: Record<string, unknown> = { template: pending.style, pickBy: pending.pickBy, locked: pending.pickBy === 'manual' };
+    const body: Record<string, unknown> = { template: pending.style, pickBy: pending.pickBy };
     if (pending.pickBy === 'manual') {
       body.manualItemId = pending.manualItemId;
       body.manualItemName = pending.manualItemName;
     }
     await updateTarget(t.id, body);
-    if (pending.pickBy === 'manual') await generate(t.id);
+    await generate(t.id);
     setPending(null);
+    setDrafts((d) => {
+      const n = { ...d };
+      delete n[t.id];
+      return n;
+    });
   };
 
   return (
@@ -144,11 +173,22 @@ export default function TargetsPage() {
             <Card
               key={t.id}
               className={cn('cursor-pointer p-3 transition-colors hover:border-primary/50', isSelected && 'border-primary')}
-              onClick={() => setSelected(isSelected ? null : t.id)}
+              onClick={() => {
+                setSelected(isSelected ? null : t.id);
+                setDrafts((d) => {
+                  const n = { ...d };
+                  delete n[t.id];
+                  return n;
+                });
+              }}
             >
               <div className="flex items-center gap-3">
                 {t.coverUrl ? (
-                  <img src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`} alt="" className="h-16 w-12 shrink-0 rounded-md border bg-muted/40 object-cover" />
+                  <img
+                    src={drafts[t.id] || `${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
+                    alt=""
+                    className="h-16 w-12 shrink-0 rounded-md border bg-muted/40 object-cover"
+                  />
                 ) : (
                   <div className="h-16 w-12 shrink-0 rounded-md border bg-muted/40" />
                 )}
