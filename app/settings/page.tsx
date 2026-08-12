@@ -37,7 +37,45 @@ export default function SettingsPage() {
   const [waiting, setWaiting] = useState(false);
   const [waitMsg, setWaitMsg] = useState('');
   const [previewSource, setPreviewSource] = useState('');
-  const [targets, setTargets] = useState<{ id: string; name: string; kind: string }[]>([]);
+  const [targets, setTargets] = useState<{ id: string; name: string; kind: string; missing?: boolean }[]>([]);
+  const [previewSrc, setPreviewSrc] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const cur = draft?.coverByStyle?.[group] || {};
+  const curPick = draft?.defaultPickByByStyle?.[group] || 'added';
+
+  // 实时预览
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const q = new URLSearchParams({
+        style: group.endsWith('-wall3') ? 'wall3' : 'single',
+        size: group.startsWith('library') ? 'thumb' : 'poster',
+        backgroundMode: cur.backgroundMode || 'gradient',
+        title: group.startsWith('library') ? '媒体库' : '合集',
+        showCount: cur.showCount !== false ? '1' : '0',
+        titleSize: String(cur.titleSize ?? 84),
+        subtitleSize: String(cur.subtitleSize ?? 36),
+        bgTop: cur.bgTop || '#17233d',
+        bgBottom: cur.bgBottom || '#0a0f1c',
+        accent: cur.accent || '#00a4dc',
+        titleColor: cur.titleColor || '#ffffff',
+        subtitleColor: cur.subtitleColor || '#c9d6f2'
+      });
+      if (previewSource) {
+        q.set('targetId', previewSource);
+        q.set('pickBy', curPick);
+      }
+      setLoading(true);
+      const img = new Image();
+      img.onload = () => {
+        setPreviewSrc(img.src);
+        setLoading(false);
+      };
+      img.onerror = () => setLoading(false);
+      img.src = `/api/demo-preview?${q.toString()}&t=${Date.now()}`;
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [group, cur, curPick, previewSource]);
 
   const load = async () => {
     try {
@@ -80,43 +118,6 @@ export default function SettingsPage() {
     });
   };
 
-  const cur = draft.coverByStyle?.[group] || {};
-  const curPick = draft.defaultPickByByStyle?.[group] || 'added';
-
-  // 实时预览
-  const [previewSrc, setPreviewSrc] = useState('');
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const q = new URLSearchParams({
-        style: group.endsWith('-wall3') ? 'wall3' : 'single',
-        size: group.startsWith('library') ? 'thumb' : 'poster',
-        backgroundMode: cur.backgroundMode || 'gradient',
-        title: group.startsWith('library') ? '媒体库' : '合集',
-        showCount: cur.showCount !== false ? '1' : '0',
-        titleSize: String(cur.titleSize ?? 84),
-        subtitleSize: String(cur.subtitleSize ?? 36),
-        bgTop: cur.bgTop || '#17233d',
-        bgBottom: cur.bgBottom || '#0a0f1c',
-        accent: cur.accent || '#00a4dc',
-        titleColor: cur.titleColor || '#ffffff',
-        subtitleColor: cur.subtitleColor || '#c9d6f2'
-      });
-      if (previewSource) {
-        q.set('targetId', previewSource);
-        q.set('pickBy', curPick);
-      }
-      setLoading(true);
-      const img = new Image();
-      img.onload = () => {
-        setPreviewSrc(img.src);
-        setLoading(false);
-      };
-      img.onerror = () => setLoading(false);
-      img.src = `/api/demo-preview?${q.toString()}&t=${Date.now()}`;
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [group, cur, curPick, previewSource]);
 
   const exportBackup = async () => {
     const res = await fetch('/api/export');
@@ -165,6 +166,27 @@ export default function SettingsPage() {
         setWaitMsg('60 秒内未收到，请确认插件配置');
       }
     }, 2000);
+  };
+
+  const saveAndRegen = async () => {
+    setMsg('正在保存并重新生成…');
+    try {
+      await api('/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          styleByKind: draft.styleByKind,
+          defaultPickByByStyle: draft.defaultPickByByStyle,
+          coverByStyle: draft.coverByStyle
+        })
+      });
+      const kind = group.startsWith('library') ? 'library' : 'collection';
+      const style = group.endsWith('-wall3') ? 'wall3' : 'single';
+      const label = `${kind === 'library' ? '媒体库' : '合集'}·${style === 'wall3' ? '海报墙' : '单图海报'}`;
+      await api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true, onlyKind: kind, onlyStyle: style }) });
+      setMsg(`设置已保存，开始重新生成${label}封面（仅未锁定项）`);
+    } catch (e: any) {
+      setMsg(`保存失败：${e.message}`);
+    }
   };
 
   const webdav = draft;
@@ -327,9 +349,16 @@ export default function SettingsPage() {
 
             <Field label="字号">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Input type="number" value={cur.titleSize ?? 84} onChange={(e) => setGroupDraft({ titleSize: Number(e.target.value) })} />
-                <Input type="number" value={cur.subtitleSize ?? 36} onChange={(e) => setGroupDraft({ subtitleSize: Number(e.target.value) })} />
+                <label className="block">
+                  <span className="mb-1 block text-xs text-muted-foreground">标题字号</span>
+                  <Input type="number" min={18} max={480} value={cur.titleSize ?? 84} onChange={(e) => setGroupDraft({ titleSize: Number(e.target.value) })} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs text-muted-foreground">副标题字号</span>
+                  <Input type="number" min={12} max={240} value={cur.subtitleSize ?? 36} onChange={(e) => setGroupDraft({ subtitleSize: Number(e.target.value) })} />
+                </label>
               </div>
+              <p className="mt-1 text-[11px] text-muted-foreground/70">按输出宽度等比缩放</p>
             </Field>
 
             <div className="flex flex-wrap gap-4">
@@ -353,6 +382,9 @@ export default function SettingsPage() {
             >
               保存封面配置
             </Button>
+            <Button variant="outline" onClick={saveAndRegen}>
+              保存并重新生成当前配置封面
+            </Button>
           </CardContent>
         </Card>
 
@@ -364,12 +396,23 @@ export default function SettingsPage() {
             <CardContent className="space-y-3">
               <Select value={previewSource} onChange={(e) => setPreviewSource(e.target.value)}>
                 <option value="">占位图</option>
-                {targets.filter((t) => (group.startsWith('library') ? t.kind === 'library' : t.kind === 'collection')).map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
+                {targets
+                  .filter((t) => !t.missing && (group.startsWith('library') ? t.kind === 'library' : t.kind === 'collection'))
+                  .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
               </Select>
               <div className="relative">
-                {previewSrc ? <img src={previewSrc} alt="封面预览" className="w-full rounded-lg border" /> : null}
+                {previewSrc ? (
+                  <img
+                    src={previewSrc}
+                    alt="封面预览"
+                    className={cn('rounded-lg border', group.startsWith('library') ? 'w-full' : 'w-40')}
+                  />
+                ) : null}
                 {loading ? <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 text-xs text-white">生成中…</div> : null}
               </div>
             </CardContent>

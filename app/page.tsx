@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Modal } from '@/components/ui/modal';
 import { cn, fmtTime, TRIGGER_LABEL } from '@/lib/utils';
 
 type Status = {
@@ -16,6 +17,7 @@ type Status = {
   lastRun?: string;
   lastReason?: string;
   lastError?: string;
+  font?: { hint?: string; fontFamily?: string };
 };
 
 type Target = {
@@ -66,6 +68,8 @@ export default function DashboardPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [previewTarget, setPreviewTarget] = useState<Target | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   const load = async () => {
     try {
@@ -112,6 +116,20 @@ export default function DashboardPage() {
   const retry = async (id: string) => {
     await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
     load();
+  };
+
+  const updatePreview = async () => {
+    if (!previewTarget) return;
+    setGenerating(true);
+    try {
+      await api(`/api/targets/${previewTarget.id}/generate`, { method: 'POST', body: '{}' });
+      await load();
+      setPreviewTarget(null);
+    } catch {
+      // ignore
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -168,6 +186,15 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {status?.font?.hint ? (
+        <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          <AlertIcon className="h-4 w-4 shrink-0" />
+          <span>
+            {status.font.hint}（当前使用字体：{status.font.fontFamily || '未知'}）
+          </span>
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>需要关注</CardTitle>
@@ -188,7 +215,7 @@ export default function DashboardPage() {
                       <div key={t.id} className="flex items-center gap-3 rounded-md border bg-muted/30 p-2.5">
                         <span className="shrink-0 text-sm font-semibold">{t.name}</span>
                         <Badge variant="secondary">{t.kind === 'library' ? '媒体库' : '合集'}</Badge>
-                        <span className="min-w-0 flex-1 truncate text-xs text-red-400" title={t.lastError}>
+                        <span className="min-w-0 flex-1 break-words text-xs text-red-400">
                           {t.lastError}
                         </span>
                         <Button size="sm" onClick={() => retry(t.id)}>
@@ -210,7 +237,7 @@ export default function DashboardPage() {
                       <div key={t.seq} className="flex items-center gap-3 rounded-md border bg-muted/30 p-2.5">
                         <span className="shrink-0 text-sm font-semibold">{t.name}</span>
                         <span className="text-xs text-muted-foreground">{fmtTime(t.ts)}</span>
-                        <span className="min-w-0 flex-1 truncate text-xs text-red-400" title={t.error}>
+                        <span className="min-w-0 flex-1 break-words text-xs text-red-400">
                           {t.error || '未知错误'}
                         </span>
                         <Button size="sm" variant="outline" onClick={() => ack({ taskSeq: t.seq })}>
@@ -239,20 +266,48 @@ export default function DashboardPage() {
           {recentLibs.length || recentCols.length ? (
             <div className="space-y-4">
               {recentLibs.length ? (
-                <RecentRow title="媒体库" items={recentLibs} wide />
+                <RecentRow title="媒体库" items={recentLibs} wide onPreview={setPreviewTarget} />
               ) : null}
-              {recentCols.length ? <RecentRow title="合集" items={recentCols} /> : null}
+              {recentCols.length ? <RecentRow title="合集" items={recentCols} onPreview={setPreviewTarget} /> : null}
             </div>
           ) : (
             <div className="py-2 text-sm text-muted-foreground">还没有生成记录</div>
           )}
         </CardContent>
       </Card>
+
+      <Modal open={!!previewTarget} onClose={() => setPreviewTarget(null)} title="封面预览">
+        {previewTarget ? (
+          <div className="flex flex-col items-start gap-4 sm:flex-row">
+            <div className="shrink-0">
+              {previewTarget.coverUrl ? (
+                <img
+                  src={`${previewTarget.coverUrl}?v=${encodeURIComponent(previewTarget.lastGeneratedAt || Date.now())}`}
+                  alt=""
+                  className={cn('rounded-lg border', previewTarget.kind === 'library' ? 'w-72' : 'w-44')}
+                />
+              ) : (
+                <div className="flex h-40 w-40 items-center justify-center rounded-lg border text-xs text-muted-foreground">
+                  尚未生成封面
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                展示当前已生成的封面{previewTarget.lastGeneratedAt ? `（${fmtTime(previewTarget.lastGeneratedAt)} 生成）` : ''}，不会重复合成。
+              </p>
+              <Button size="sm" disabled={generating} onClick={updatePreview}>
+                {generating ? '生成中…' : '更新并上传'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }
 
-function RecentRow({ title, items, wide }: { title: string; items: Target[]; wide?: boolean }) {
+function RecentRow({ title, items, wide, onPreview }: { title: string; items: Target[]; wide?: boolean; onPreview: (t: Target) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -297,7 +352,7 @@ function RecentRow({ title, items, wide }: { title: string; items: Target[]; wid
       <ScrollArea ref={ref} className="cursor-grab">
         <div className="flex gap-3">
           {items.map((t) => (
-            <div key={t.id} className={cn('shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')}>
+            <div key={t.id} className={cn('shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')} onClick={() => onPreview(t)}>
               <img src={t.coverUrl} alt="" className="w-full rounded-md border bg-muted/40" />
               {t.lastTrigger ? (
                 <div className="mt-1">
@@ -321,6 +376,16 @@ function CheckCircle({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
       <path d="m9 11 3 3L22 4" />
+    </svg>
+  );
+}
+
+function AlertIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
     </svg>
   );
 }

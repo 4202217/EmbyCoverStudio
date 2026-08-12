@@ -18,6 +18,7 @@ export function Sidebar({ version }: { version: string }) {
   const pathname = usePathname();
   const [changelog, setChangelog] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string }; stats?: { failed?: number } } | null>(null);
 
   useEffect(() => {
     fetch('/api/changelog')
@@ -25,6 +26,28 @@ export function Sidebar({ version }: { version: string }) {
       .then((d) => setChangelog(d.text || '暂无更新记录'))
       .catch(() => setChangelog('暂无更新记录'));
   }, []);
+
+  useEffect(() => {
+    const load = () => {
+      fetch('/api/status')
+        .then((r) => r.json())
+        .then(setStatus)
+        .catch(() => setStatus(null));
+    };
+    load();
+    const timer = setInterval(load, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const state = (() => {
+    const s = status;
+    if (!s) return { color: 'bg-red-500', text: '服务不可用' };
+    if (s.running) return { color: 'bg-sky-500', text: '正在同步…' };
+    if ((s.stats?.failed || 0) > 0) return { color: 'bg-red-500', text: `${s.stats?.failed ?? 0} 个封面异常` };
+    if (s.emby?.connected) return { color: 'bg-emerald-500', text: `已连接 ${s.emby.serverName || 'Emby'}` };
+    if (s.emby?.configured) return { color: 'bg-red-500', text: 'Emby 连接异常' };
+    return { color: 'bg-slate-400', text: '未配置 Emby' };
+  })();
 
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-5 border-r bg-card px-4 py-5">
@@ -56,8 +79,8 @@ export function Sidebar({ version }: { version: string }) {
       </nav>
       <div className="mt-auto rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-          已连接 Emby
+          <span className={cn('h-2 w-2 shrink-0 rounded-full', state.color)} />
+          {state.text}
         </div>
       </div>
       <Button variant="link" className="h-auto justify-start px-1 text-xs text-muted-foreground" onClick={() => setOpen(true)}>

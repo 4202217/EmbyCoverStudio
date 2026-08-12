@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { DataTable, type Column } from '@/components/data-table';
 import { cn, fmtTime, TRIGGER_LABEL } from '@/lib/utils';
 
 type Task = {
@@ -24,6 +23,16 @@ type Log = { ts: string; level: string; message: string };
 
 const TYPE_LABEL: Record<string, string> = { single: '单张生成', batch: '批量更新', sync: '全量同步', precise: '精准更新' };
 
+const TRIGGER_COLOR: Record<string, string> = {
+  manual: 'bg-slate-500/15 text-slate-300',
+  batch: 'bg-purple-500/15 text-purple-300',
+  scheduler: 'bg-amber-500/15 text-amber-300',
+  webhook: 'bg-emerald-500/15 text-emerald-300',
+  startup: 'bg-sky-500/15 text-sky-300',
+  resume: 'bg-teal-500/15 text-teal-300',
+  enable: 'bg-pink-500/15 text-pink-300'
+};
+
 async function api<T>(path: string): Promise<T> {
   const res = await fetch(path);
   const data = await res.json().catch(() => null);
@@ -32,48 +41,101 @@ async function api<T>(path: string): Promise<T> {
 }
 
 export default function LogsPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [sortKey, setSortKey] = useState<string>('seq');
-  const [sortDir, setSortDir] = useState<1 | -1>(-1);
-  const [levelFilter, setLevelFilter] = useState<string>('all');
+  const [logCount, setLogCount] = useState(0);
 
-  const load = async () => {
-    try {
-      const [t, l] = await Promise.all([api<{ tasks: Task[] }>('/api/tasks'), api<{ logs: Log[] }>('/api/logs')]);
-      setTasks(t.tasks);
-      setLogs(l.logs);
-    } catch {
-      // ignore
+  const taskColumns: Column<Task>[] = [
+    { key: 'seq', label: '序号', width: '70px', sortable: true, render: (t) => <span className="text-muted-foreground">{t.seq ?? ''}</span> },
+    { key: 'name', label: '名称', sortable: true, render: (t) => <span className="whitespace-nowrap">{t.name}</span> },
+    {
+      key: 'type',
+      label: '类型',
+      width: '104px',
+      sortable: true,
+      filterOpts: Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
+      render: (t) => <span className="whitespace-nowrap">{TYPE_LABEL[t.type] || t.type || '—'}</span>
+    },
+    { key: 'ts', label: '时间', width: '170px', sortable: true, render: (t) => <span className="text-xs text-muted-foreground">{fmtTime(t.ts)}</span> },
+    {
+      key: 'trigger',
+      label: '触发方式',
+      width: '116px',
+      sortable: true,
+      filterOpts: Object.entries(TRIGGER_LABEL).map(([value, label]) => ({ value, label })),
+      render: (t) => (
+        <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', TRIGGER_COLOR[t.trigger || 'manual'] || 'bg-slate-500/15 text-slate-300')}>
+          {TRIGGER_LABEL[t.trigger] || t.trigger || '—'}
+        </span>
+      )
+    },
+    {
+      key: 'status',
+      label: '结果',
+      width: '150px',
+      sortable: true,
+      filterOpts: [
+        { value: 'success', label: '成功' },
+        { value: 'failed', label: '失败' },
+        { value: 'cancelled', label: '已取消' },
+        { value: 'paused', label: '已暂停' }
+      ],
+      render: (t) => {
+        const badge =
+          t.status === 'success' ? (
+            <Badge variant="success">成功</Badge>
+          ) : t.status === 'failed' ? (
+            <Badge variant="destructive">失败</Badge>
+          ) : t.status === 'cancelled' ? (
+            <Badge variant="muted">已取消</Badge>
+          ) : (
+            <Badge variant="warning">已暂停</Badge>
+          );
+        const detail = [t.updated ? `更新 ${t.updated}` : '', t.unchanged ? `无变化 ${t.unchanged}` : '', t.failed ? `失败 ${t.failed}` : '']
+          .filter(Boolean)
+          .join('，');
+        return (
+          <div>
+            {badge}
+            {detail ? <div className="mt-0.5 text-[11px] text-muted-foreground">{detail}</div> : null}
+            {t.status === 'failed' && t.error ? (
+              <div className="mt-0.5 max-w-[240px] whitespace-pre-wrap break-words text-[11px] text-red-400" title={t.error}>
+                {t.error}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
     }
-  };
+  ];
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const sortedTasks = [...tasks]
-    .filter((t) => levelFilter === 'all' || t.status === levelFilter)
-    .sort((a, b) => {
-      const cmp =
-        sortKey === 'seq'
-          ? (a.seq || 0) - (b.seq || 0)
-          : sortKey === 'ts'
-            ? new Date(a.ts).getTime() - new Date(b.ts).getTime()
-            : String(a[sortKey as keyof Task] || '').localeCompare(String(b[sortKey as keyof Task] || ''), 'zh-CN');
-      return cmp * sortDir;
-    });
-
-  const toggleSort = (key: string) => {
-    if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
-    else {
-      setSortKey(key);
-      setSortDir(key === 'seq' || key === 'ts' ? -1 : 1);
-    }
-  };
-
-  const statusBadge = (s: string) =>
-    s === 'success' ? <Badge variant="success">成功</Badge> : s === 'failed' ? <Badge variant="destructive">失败</Badge> : s === 'cancelled' ? <Badge variant="muted">已取消</Badge> : <Badge variant="warning">已暂停</Badge>;
+  const logColumns: Column<Log>[] = [
+    { key: 'ts', label: '时间', width: '170px', sortable: true, render: (l) => <span className="text-xs text-muted-foreground">{fmtTime(l.ts)}</span> },
+    {
+      key: 'level',
+      label: '级别',
+      width: '80px',
+      sortable: true,
+      filterOpts: [
+        { value: 'info', label: 'info' },
+        { value: 'warn', label: 'warn' },
+        { value: 'error', label: 'error' }
+      ],
+      render: (l) => (
+        <span
+          className={cn(
+            'rounded px-1.5 py-0.5 text-xs font-medium',
+            l.level === 'error'
+              ? 'bg-red-500/15 text-red-400'
+              : l.level === 'warn'
+                ? 'bg-amber-500/15 text-amber-300'
+                : 'bg-slate-500/15 text-slate-300'
+          )}
+        >
+          {l.level}
+        </span>
+      )
+    },
+    { key: 'message', label: '内容', render: (l) => <span className="whitespace-pre-wrap break-words text-xs">{l.message}</span> }
+  ];
 
   return (
     <div className="space-y-6">
@@ -83,81 +145,32 @@ export default function LogsPage() {
       </div>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle>任务记录</CardTitle>
-          <div className="flex items-center gap-2">
-            <select className="h-8 rounded-md border bg-transparent px-2 text-xs" value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)}>
-              <option value="all">全部结果</option>
-              <option value="success">成功</option>
-              <option value="failed">失败</option>
-              <option value="cancelled">已取消</option>
-              <option value="paused">已暂停</option>
-            </select>
-            <Button size="sm" variant="outline" onClick={load}>
-              刷新
-            </Button>
-          </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="cursor-pointer" onClick={() => toggleSort('seq')}>序号</TableHead>
-                <TableHead className="cursor-pointer" onClick={() => toggleSort('name')}>名称</TableHead>
-                <TableHead className="cursor-pointer" onClick={() => toggleSort('type')}>类型</TableHead>
-                <TableHead className="cursor-pointer" onClick={() => toggleSort('ts')}>时间</TableHead>
-                <TableHead className="cursor-pointer" onClick={() => toggleSort('trigger')}>触发方式</TableHead>
-                <TableHead className="cursor-pointer" onClick={() => toggleSort('status')}>结果</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedTasks.slice(0, 100).map((t) => (
-                <TableRow key={t.seq}>
-                  <TableCell className="text-muted-foreground">{t.seq}</TableCell>
-                  <TableCell>{t.name}</TableCell>
-                  <TableCell>{TYPE_LABEL[t.type] || t.type || '—'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{fmtTime(t.ts)}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{TRIGGER_LABEL[t.trigger] || t.trigger || '—'}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {statusBadge(t.status)}
-                    {t.updated ? <div className="mt-0.5 text-[11px] text-muted-foreground">更新 {t.updated} 个</div> : null}
-                    {t.status === 'failed' && t.error ? <div className="mt-0.5 max-w-[260px] truncate text-[11px] text-red-400" title={t.error}>{t.error}</div> : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={taskColumns}
+            fetchData={() => api<{ tasks: Task[] }>('/api/tasks').then((r) => r.tasks || [])}
+            emptyText="暂无任务记录"
+            initialSort={{ key: 'seq', dir: -1 }}
+          />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>运行日志</CardTitle>
-          <span className="text-xs text-muted-foreground">共 {logs.length} 条</span>
+          <span className="text-xs text-muted-foreground">共 {logCount} 条</span>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>时间</TableHead>
-                <TableHead>级别</TableHead>
-                <TableHead>内容</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {logs.slice(0, 100).map((l, i) => (
-                <TableRow key={i}>
-                  <TableCell className="text-xs text-muted-foreground">{fmtTime(l.ts)}</TableCell>
-                  <TableCell>
-                    <Badge variant={l.level === 'error' ? 'destructive' : l.level === 'warn' ? 'warning' : 'secondary'}>{l.level}</Badge>
-                  </TableCell>
-                  <TableCell className="text-xs">{l.message}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={logColumns}
+            fetchData={() => api<{ logs: Log[] }>('/api/logs').then((r) => r.logs || [])}
+            emptyText="暂无日志"
+            initialSort={{ key: 'ts', dir: -1 }}
+            onLoaded={(rows) => setLogCount(rows.length)}
+          />
         </CardContent>
       </Card>
     </div>
