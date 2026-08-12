@@ -194,7 +194,7 @@ export function DataTable<T extends { [k: string]: any }>({
       {popup ? (
         <div
           data-filter-popup
-          className="fixed z-50 rounded-md border bg-popover p-2 text-xs shadow-lg"
+          className="fixed z-50 rounded-md border bg-popover p-2 text-xs text-popover-foreground shadow-xl"
           style={{ left: popup.x, top: popup.y, width: popup.width }}
           onClick={(e) => e.stopPropagation()}
         >

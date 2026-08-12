@@ -659,14 +659,14 @@ function FilterSelect({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-transparent px-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-sm text-foreground shadow-sm transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         {current?.icon || icon}
         <span className="whitespace-nowrap">{current?.label || ''}</span>
         <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-40 mt-1 min-w-full overflow-hidden rounded-md border bg-popover py-1 shadow-lg">
+        <div className="absolute left-0 top-full z-40 mt-1 min-w-full overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-xl">
           {options.map((o) => (
             <button
               key={o.value}
