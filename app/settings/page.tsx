@@ -449,18 +449,13 @@ export default function SettingsPage() {
                     </option>
                   ))}
               </Select>
-              <div
-                className={cn(
-                  'relative mx-auto overflow-hidden rounded-lg border bg-muted/30',
-                  group.startsWith('library') ? 'aspect-video w-full' : 'aspect-[2/3] w-40'
-                )}
-              >
+              <div className="relative h-64 w-full overflow-hidden rounded-lg border bg-muted/30">
                 {previewSrc ? (
                   <img
                     key={previewSrc}
                     src={previewSrc}
                     alt="封面预览"
-                    className="absolute inset-0 h-full w-full animate-in fade-in object-cover duration-200"
+                    className="absolute inset-0 h-full w-full animate-in fade-in object-contain duration-200 p-1.5"
                   />
                 ) : null}
                 {loading ? (
