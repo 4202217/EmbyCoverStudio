@@ -12,7 +12,6 @@ type Target = {
   id: string;
   name: string;
   kind: 'library' | 'collection';
-  collectionType?: string;
   coverUrl?: string;
   lastGeneratedAt?: string;
   lastError?: string;
@@ -52,10 +51,12 @@ export default function TargetsPage() {
   const [typeF, setTypeF] = useState('all');
   const [statusF, setStatusF] = useState('all');
   const [cfgF, setCfgF] = useState('all');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [coverF, setCoverF] = useState('all');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<{ style: string; pickBy: string; manualItemId: string; manualItemName: string } | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -71,9 +72,66 @@ export default function TargetsPage() {
     load();
   }, []);
 
+  const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || styles.styleByKind?.library || 'single');
+  const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${effStyle(t)}`] || 'added';
+  const pickLabel = (p: string) => PICK_LABEL[p] || '最新入库';
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return targets
+      .filter((t) => !q || t.name.toLowerCase().includes(q))
+      .filter((t) => typeF === 'all' || t.kind === typeF)
+      .filter((t) => statusF === 'all' || (statusF === 'locked' ? t.locked : !t.locked))
+      .filter((t) => cfgF === 'all' || (cfgF === 'configured' ? t.configured : !t.configured))
+      .filter((t) => coverF === 'all' || (coverF === 'generated' ? !!t.coverUrl : !!t.lastError))
+      .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'library' ? -1 : 1) || a.name.localeCompare(b.name, 'zh-CN'));
+  }, [targets, query, typeF, statusF, cfgF, coverF]);
+
+  const selectedSingle = selected.size === 1 ? targets.find((t) => selected.has(t.id)) ?? null : null;
+
+  const updateTarget = async (id: string, body: Record<string, unknown>) => {
+    await api(`/api/targets/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    await load();
+  };
+
+  const generate = async (id: string) => {
+    setBusy(id);
+    try {
+      await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const batch = async (action: string, value = '') => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    await api('/api/targets/batch', { method: 'POST', body: JSON.stringify({ ids, action, value }) });
+    await load();
+  };
+
+  const syncAll = async () => {
+    await api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true }) });
+  };
+
+  const openPicker = async (t: Target) => {
+    const r = await api<{ items: Item[] }>(`/api/targets/${t.id}/items`);
+    setItems(r.items.filter((i) => i.hasPrimary));
+  };
+
+  const changed = (t: Target) => {
+    if (!pending) return false;
+    if (pending.style !== effStyle(t)) return true;
+    if (pending.pickBy !== effPick(t)) return true;
+    if (pending.pickBy === 'manual' && pending.manualItemId !== (t.manualItemId || '')) return true;
+    return false;
+  };
+
   // 修改配置后生成本地草稿预览（不推送 Emby）
   useEffect(() => {
-    if (!selected || !pending) return;
+    if (!selectedSingle || !pending) return;
+    const id = selectedSingle.id;
     const timer = setTimeout(async () => {
       try {
         const body: Record<string, unknown> = { style: pending.style, pickBy: pending.pickBy };
@@ -82,46 +140,14 @@ export default function TargetsPage() {
           body.manualItemId = pending.manualItemId;
           body.manualItemName = pending.manualItemName;
         }
-        const r = await api<{ coverUrl: string }>(`/api/targets/${selected}/preview-draft`, {
-          method: 'POST',
-          body: JSON.stringify(body)
-        });
-        setDrafts((d) => ({ ...d, [selected]: r.coverUrl }));
+        const r = await api<{ coverUrl: string }>(`/api/targets/${id}/preview-draft`, { method: 'POST', body: JSON.stringify(body) });
+        setDrafts((d) => ({ ...d, [id]: r.coverUrl }));
       } catch {
         // 预览失败时保留当前封面
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [pending, selected]);
-
-  const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || styles.styleByKind?.library || 'single');
-  const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${effStyle(t)}`] || 'added';
-  const pickLabel = (p: string) => PICK_LABEL[p] || '最新入库';
-
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return targets
-      .filter((t) => !q || t.name.toLowerCase().includes(q))
-      .filter((t) => typeF === 'all' || t.kind === typeF)
-      .filter((t) => statusF === 'all' || (statusF === 'locked' ? t.locked : !t.locked))
-      .filter((t) => cfgF === 'all' || (cfgF === 'configured' ? t.configured : !t.configured))
-      .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'library' ? -1 : 1) || a.name.localeCompare(b.name, 'zh-CN'));
-  }, [targets, query, typeF, statusF, cfgF]);
-
-  const updateTarget = async (id: string, body: Record<string, unknown>) => {
-    await api(`/api/targets/${id}`, { method: 'PUT', body: JSON.stringify(body) });
-    await load();
-  };
-
-  const generate = async (id: string) => {
-    await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
-    await load();
-  };
-
-  const openPicker = async (t: Target) => {
-    const r = await api<{ items: Item[] }>(`/api/targets/${t.id}/items`);
-    setItems(r.items.filter((i) => i.hasPrimary));
-  };
+  }, [pending, selectedSingle]);
 
   const saveConfig = async (t: Target) => {
     if (!pending) return;
@@ -140,6 +166,14 @@ export default function TargetsPage() {
     });
   };
 
+  const clearFilters = () => {
+    setQuery('');
+    setTypeF('all');
+    setStatusF('all');
+    setCfgF('all');
+    setCoverF('all');
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -148,7 +182,7 @@ export default function TargetsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="搜索名称…" value={query} onChange={(e) => setQuery(e.target.value)} className="max-w-xs" />
+        <Input placeholder="搜索名称…" value={query} onChange={(e) => setQuery(e.target.value)} className="max-w-[220px]" />
         <Select value={typeF} onChange={(e) => setTypeF(e.target.value)} className="w-28">
           <option value="all">全部类型</option>
           <option value="library">媒体库</option>
@@ -164,17 +198,59 @@ export default function TargetsPage() {
           <option value="default">默认配置</option>
           <option value="configured">手动配置</option>
         </Select>
+        <Select value={coverF} onChange={(e) => setCoverF(e.target.value)} className="w-28">
+          <option value="all">全部封面</option>
+          <option value="generated">已生成</option>
+          <option value="error">有错误</option>
+        </Select>
+        <Button size="sm" variant="link" className="px-1 text-muted-foreground underline underline-offset-4" onClick={clearFilters}>
+          清除筛选
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-2.5">
+        <div className="flex items-center gap-2 text-xs">
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={visible.length > 0 && visible.every((t) => selected.has(t.id))}
+              onChange={(e) => {
+                if (e.target.checked) setSelected(new Set(visible.map((t) => t.id)));
+                else setSelected(new Set());
+              }}
+            />
+            全选
+          </label>
+          <span className="text-muted-foreground">已选 {selected.size} 项</span>
+          <Button size="sm" variant="outline" onClick={() => batch('enable')} disabled={!selected.size}>
+            取消锁定
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => batch('disable')} disabled={!selected.size}>
+            锁定
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => batch('reset')} disabled={!selected.size}>
+            恢复默认配置
+          </Button>
+          <Button size="sm" onClick={() => batch('generate')} disabled={!selected.size}>
+            更新封面
+          </Button>
+        </div>
+        <Button size="sm" onClick={syncAll}>
+          同步媒体库封面
+        </Button>
       </div>
 
       <div className="space-y-2">
-        {list.map((t) => {
-          const isSelected = selected === t.id;
+        {visible.map((t) => {
+          const isSelected = selected.has(t.id);
+          const pick = effPick(t);
           return (
             <Card
               key={t.id}
               className={cn('cursor-pointer p-3 transition-colors hover:border-primary/50', isSelected && 'border-primary')}
               onClick={() => {
-                setSelected(isSelected ? null : t.id);
+                setSelected(new Set(isSelected ? [] : [t.id]));
+                setPending(null);
                 setDrafts((d) => {
                   const n = { ...d };
                   delete n[t.id];
@@ -183,31 +259,27 @@ export default function TargetsPage() {
               }}
             >
               <div className="flex items-center gap-3">
-                {t.coverUrl ? (
-                  <img
-                    src={drafts[t.id] || `${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
-                    alt=""
-                    className="h-16 w-12 shrink-0 rounded-md border bg-muted/40 object-cover"
-                  />
-                ) : (
-                  <div className="h-16 w-12 shrink-0 rounded-md border bg-muted/40" />
-                )}
+                <div className={cn('shrink-0 rounded-md border bg-muted/40', t.kind === 'library' ? 'h-14 w-24' : 'h-16 w-12')}>
+                  {t.coverUrl ? (
+                    <img src={drafts[t.id] || `${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`} alt="" className="h-full w-full rounded-md object-cover" />
+                  ) : null}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-semibold">{t.name}</span>
                     <Badge variant={t.kind === 'library' ? 'default' : 'secondary'}>{t.kind === 'library' ? '媒体库' : '合集'}</Badge>
                     {t.configured ? <Badge variant="warning">手动配置</Badge> : <Badge variant="muted">默认配置</Badge>}
                     {t.locked ? <Badge variant="destructive">已锁定</Badge> : null}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {fmtTime(t.lastGeneratedAt)} 生成 · {pickLabel(effPick(t))} · {t.itemCount ?? 0} 部影片
+                    {fmtTime(t.lastGeneratedAt)} 生成 · {pickLabel(pick)} · {t.itemCount ?? 0} 部影片
                     {t.posterSource ? <span className="block truncate">海报来源：{t.posterSource}</span> : null}
                   </div>
-                  {t.lastError ? <div className="mt-1 truncate text-xs text-red-400">{t.lastError}</div> : null}
+                  {t.lastError ? <div className="mt-1 flex items-center gap-1 text-xs text-red-400"><AlertIcon /> {t.lastError}</div> : null}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <Button size="sm" disabled={t.locked} onClick={(e) => { e.stopPropagation(); generate(t.id); }}>
-                    更新
+                  <Button size="sm" disabled={t.locked || busy === t.id} onClick={(e) => { e.stopPropagation(); generate(t.id); }}>
+                    {busy === t.id ? '更新中…' : '更新'}
                   </Button>
                   {isSelected ? (
                     <Button
@@ -224,36 +296,36 @@ export default function TargetsPage() {
                 </div>
               </div>
 
-              {isSelected ? (
+              {isSelected && selectedSingle ? (
                 <div className="mt-3 space-y-2 border-t pt-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">封面样式</span>
                     <div className="flex gap-1.5">
-                      <PickBtn active={effStyle(t) === 'single'} onClick={() => setPending({ ...(pending || { style: 'single', pickBy: effPick(t), manualItemId: '', manualItemName: '' }), style: 'single' })}>
+                      <PickBtn active={(pending?.style || effStyle(t)) === 'single'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: pick, manualItemId: '', manualItemName: '' }), style: 'single' })}>
                         单图海报
                       </PickBtn>
                       {t.kind === 'library' ? (
-                        <PickBtn active={effStyle(t) === 'wall3'} onClick={() => setPending({ ...(pending || { style: 'single', pickBy: effPick(t), manualItemId: '', manualItemName: '' }), style: 'wall3' })}>
+                        <PickBtn active={(pending?.style || effStyle(t)) === 'wall3'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: pick, manualItemId: '', manualItemName: '' }), style: 'wall3' })}>
                           海报墙
                         </PickBtn>
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-muted-foreground">选图依据</span>
                     <div className="flex gap-1.5">
-                      <PickBtn active={(pending?.pickBy || effPick(t)) === 'added'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: effPick(t), manualItemId: '', manualItemName: '' }), pickBy: 'added' })}>
+                      <PickBtn active={(pending?.pickBy || pick) === 'added'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'added' })}>
                         最新入库
                       </PickBtn>
-                      <PickBtn active={(pending?.pickBy || effPick(t)) === 'premiere'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: effPick(t), manualItemId: '', manualItemName: '' }), pickBy: 'premiere' })}>
+                      <PickBtn active={(pending?.pickBy || pick) === 'premiere'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'premiere' })}>
                         最新发行
                       </PickBtn>
                       {(pending?.style || effStyle(t)) === 'single' ? (
                         <>
-                          <PickBtn active={(pending?.pickBy || effPick(t)) === 'random'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: effPick(t), manualItemId: '', manualItemName: '' }), pickBy: 'random' })}>
+                          <PickBtn active={(pending?.pickBy || pick) === 'random'} onClick={() => setPending({ ...(pending || { style: effStyle(t), pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'random' })}>
                             随机
                           </PickBtn>
-                          <PickBtn active={(pending?.pickBy || effPick(t)) === 'manual'} onClick={() => openPicker(t)}>
+                          <PickBtn active={(pending?.pickBy || pick) === 'manual'} onClick={() => openPicker(t)}>
                             手动选择
                           </PickBtn>
                         </>
@@ -261,11 +333,13 @@ export default function TargetsPage() {
                     </div>
                   </div>
                   {pending?.pickBy === 'manual' ? (
-                    <div className="text-xs text-muted-foreground">已选：{pending.manualItemName || '未选择'}</div>
+                    <div className="text-xs text-muted-foreground">已选：{pending.manualItemName || '未选择（点击手动选择重新选）'}</div>
                   ) : null}
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => saveConfig(t)}>保存</Button>
-                  </div>
+                  {changed(t) ? (
+                    <Button size="sm" onClick={() => saveConfig(t)}>
+                      保存
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </Card>
@@ -311,5 +385,15 @@ function PickBtn({ active, onClick, children }: { active?: boolean; onClick: () 
     >
       {children}
     </button>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" className="h-3.5 w-3.5 shrink-0">
+      <path d="M8 2.5 14.5 13h-13z" strokeLinejoin="round" />
+      <path d="M8 6.5v3" strokeLinecap="round" />
+      <circle cx="8" cy="11.2" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
   );
 }

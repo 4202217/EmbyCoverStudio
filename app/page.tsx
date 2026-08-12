@@ -121,7 +121,7 @@ export default function DashboardPage() {
         <p className="text-sm text-muted-foreground">封面工坊运行状态一览</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -158,6 +158,13 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-sm font-semibold">{fmtTime(status?.lastRun)}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>定时任务</CardTitle>
+            <CardDescription>{status?.webhookPending ? 'Webhook 待执行' : status?.nextRun ? `下次 ${fmtTime(status.nextRun)}` : '等待触发'}</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm font-semibold">{status?.cron || '—'}</CardContent>
         </Card>
       </div>
 
