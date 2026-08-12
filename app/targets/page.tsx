@@ -153,7 +153,7 @@ export default function TargetsPage() {
     doneTimer.current = setTimeout(() => setShowDone(false), 6000);
   }, [sync?.running, sync?.status]);
 
-  const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || styles.styleByKind?.library || 'single');
+  const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || 'single');
   const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${effStyle(t)}`] || 'added';
   const pickLabel = (p: string) => PICK_LABEL[p] || '最新入库';
 
@@ -501,7 +501,11 @@ export default function TargetsPage() {
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">当前：</span>
                     {t.configured ? <Badge variant="warning">手动配置</Badge> : <Badge variant="muted">默认配置</Badge>}
-                    {!t.configured ? <span className="text-muted-foreground">（跟随{t.kind === 'library' ? '媒体库' : '合集'}全局配置）</span> : null}
+                    {!t.configured ? (
+                      <span className="text-muted-foreground">
+                        {t.kind === 'library' ? '（样式固定单图，选图依据跟随全局）' : '（跟随合集全局配置）'}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">封面样式</span>

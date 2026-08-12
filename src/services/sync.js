@@ -32,14 +32,14 @@ function effectivePickBy(target, settings) {
   if (target?.pickBy === 'random') return 'random';
   if (target?.pickBy === 'premiere') return 'premiere';
   if (target?.pickBy === 'added') return 'added';
-  const def = settings.defaultPickByByStyle?.[`${target.kind}-${effectiveStyleOf(target, settings)}`] || 'added';
+  const def = settings.defaultPickByByStyle?.[`${target.kind}-${effectiveStyleOf(target)}`] || 'added';
   return ['premiere', 'random'].includes(def) ? def : 'added';
 }
 
-function effectiveStyleOf(target, settings) {
+function effectiveStyleOf(target) {
   if (target.kind === 'collection') return 'single';
-  const def = settings.styleByKind?.library || 'single';
-  return isValidStyle(target.template) ? target.template : (isValidStyle(def) ? def : 'single');
+  // 未单独配置的媒体库固定使用单图海报
+  return isValidStyle(target.template) ? target.template : 'single';
 }
 
 function posterNeed(style) {
@@ -166,11 +166,10 @@ export function createSyncService(store) {
   async function syncTarget(target, client, { force = false, trigger = '' } = {}) {
     const settings = store.settings;
     const size = resolveSize(target, settings);
-    const defStyle = settings.styleByKind?.[target.kind] || 'single';
-    // 合集仅支持单图海报；媒体库支持单图/海报墙（无单独设置时用全局默认）
+    // 合集仅支持单图海报；媒体库支持单图/海报墙（未单独设置时固定单图）
     const style = target.kind === 'collection'
       ? 'single'
-      : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single'));
+      : (isValidStyle(target.template) ? target.template : 'single');
     const pickBy = effectivePickBy(target, settings);
     const genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${style}`] || {}), width: size.width, height: size.height };
     const settingsHash = sha1(JSON.stringify({ cover: genSettings, template: style, defaultPickBy: pickBy }));
@@ -290,7 +289,7 @@ export function createSyncService(store) {
       if (onlyIds) targets = targets.filter((t) => onlyIds.includes(t.id) && !t.locked);
       else targets = targets.filter((t) => !t.locked);
       if (onlyKind) targets = targets.filter((t) => t.kind === onlyKind);
-      if (onlyStyle) targets = targets.filter((t) => effectiveStyleOf(t, settings) === onlyStyle);
+      if (onlyStyle) targets = targets.filter((t) => effectiveStyleOf(t) === onlyStyle);
       if (!resume) state.queueTotal = targets.length;
       let updated = 0;
       let unchanged = 0;
@@ -451,10 +450,9 @@ export function createSyncService(store) {
     const size = overrides.size && SIZE_PRESETS[overrides.size]
       ? SIZE_PRESETS[overrides.size]
       : (overrides.width && overrides.height ? { width: overrides.width, height: overrides.height } : resolveSize(target, settings));
-    const defStyle = settings.styleByKind?.[target.kind] || 'single';
     const style = target.kind === 'collection'
       ? 'single'
-      : (isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : (isValidStyle(defStyle) ? defStyle : 'single')));
+      : (isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : 'single'));
     const pickBy = effectivePickBy(target, store.settings);
     const genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${style}`] || {}), width: size.width, height: size.height };
     if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {

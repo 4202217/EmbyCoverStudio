@@ -199,7 +199,7 @@ export default function SettingsPage() {
       const r = await api<{ settings: Settings }>('/api/settings', {
         method: 'PUT',
         body: JSON.stringify({
-          styleByKind: draft.styleByKind,
+          styleByKind: { library: 'single', collection: 'single' },
           defaultPickByByStyle: draft.defaultPickByByStyle,
           coverByStyle: draft.coverByStyle
         })
@@ -336,23 +336,6 @@ export default function SettingsPage() {
               ))}
             </div>
 
-            {group.startsWith('library') ? (
-              <div>
-                <div className="mb-1.5 text-xs font-semibold text-muted-foreground">未单独配置的媒体库默认样式</div>
-                <div className="flex gap-1.5">
-                  {['single', 'wall3'].map((st) => (
-                    <button
-                      key={st}
-                      className={cn('rounded-md border px-2.5 py-1 text-xs hover:border-primary', (draft.styleByKind?.library || 'single') === st ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
-                      onClick={() => setDraft({ ...draft, styleByKind: { ...(draft.styleByKind || {}), library: st } })}
-                    >
-                      {st === 'single' ? '单图海报' : '海报墙'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
             <Field label="选图依据">
               <div className="flex gap-1.5">
                 {['added', 'premiere', 'random'].map((p) => (
@@ -417,7 +400,7 @@ export default function SettingsPage() {
                 className="w-full"
                 onClick={() =>
                   save({
-                    styleByKind: draft.styleByKind,
+                    styleByKind: { library: 'single', collection: 'single' },
                     defaultPickByByStyle: draft.defaultPickByByStyle,
                     coverByStyle: draft.coverByStyle
                   })
