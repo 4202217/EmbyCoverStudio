@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Modal } from '@/components/ui/modal';
-import { cn, fmtTime, TRIGGER_LABEL } from '@/lib/utils';
+import { api } from '@/lib/api';
+import { toast } from '@/components/toast-provider';
+import { cn, fmtTime, TRIGGER_COLOR, TRIGGER_LABEL } from '@/lib/utils';
 
 type Status = {
   emby?: { connected?: boolean; configured?: boolean; serverName?: string; version?: string; error?: string };
@@ -42,26 +45,6 @@ type Task = {
   updated?: number;
   error?: string;
   acknowledged?: boolean;
-};
-
-async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || `请求失败（${res.status}）`);
-  return data as T;
-}
-
-const TRIGGER_COLOR: Record<string, string> = {
-  manual: 'bg-slate-500/20 text-slate-300',
-  batch: 'bg-purple-500/20 text-purple-300',
-  scheduler: 'bg-amber-500/20 text-amber-300',
-  webhook: 'bg-emerald-500/20 text-emerald-300',
-  startup: 'bg-sky-500/20 text-sky-300',
-  resume: 'bg-teal-500/20 text-teal-300',
-  enable: 'bg-pink-500/20 text-pink-300'
 };
 
 export default function DashboardPage() {
@@ -109,13 +92,23 @@ export default function DashboardPage() {
       : { text: '连接失败', color: 'bg-red-400' };
 
   const ack = async (body: Record<string, unknown>) => {
-    await api('/api/acknowledge', { method: 'POST', body: JSON.stringify(body) });
-    load();
+    try {
+      await api('/api/acknowledge', { method: 'POST', body: JSON.stringify(body) });
+      toast('ok', '已标记为已读');
+      load();
+    } catch (e: any) {
+      toast('err', e.message);
+    }
   };
 
   const retry = async (id: string) => {
-    await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
-    load();
+    try {
+      await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
+      toast('ok', '已重新生成');
+      load();
+    } catch (e: any) {
+      toast('err', e.message);
+    }
   };
 
   const updatePreview = async () => {
@@ -188,7 +181,7 @@ export default function DashboardPage() {
 
       {status?.font?.hint ? (
         <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          <AlertIcon className="h-4 w-4 shrink-0" />
+          <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
             {status.font.hint}（当前使用字体：{status.font.fontFamily || '未知'}）
           </span>
@@ -251,7 +244,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="flex items-center gap-2 py-2 text-sm text-emerald-400">
-              <CheckCircle className="h-4 w-4" />
+              <CheckCircle2 className="h-4 w-4" />
               全部正常，无需关注
             </div>
           )}
@@ -368,24 +361,5 @@ function RecentRow({ title, items, wide, onPreview }: { title: string; items: Ta
         </div>
       </ScrollArea>
     </div>
-  );
-}
-
-function CheckCircle({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <path d="m9 11 3 3L22 4" />
-    </svg>
-  );
-}
-
-function AlertIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
-      <path d="M12 9v4" />
-      <path d="M12 17h.01" />
-    </svg>
   );
 }

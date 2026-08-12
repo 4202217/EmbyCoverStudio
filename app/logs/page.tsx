@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type Column } from '@/components/data-table';
-import { cn, fmtTime, TRIGGER_LABEL } from '@/lib/utils';
+import { api } from '@/lib/api';
+import { cn, fmtTime, TRIGGER_COLOR, TRIGGER_LABEL } from '@/lib/utils';
 
 type Task = {
   seq: number;
@@ -22,23 +23,6 @@ type Task = {
 type Log = { ts: string; level: string; message: string };
 
 const TYPE_LABEL: Record<string, string> = { single: '单张生成', batch: '批量更新', sync: '全量同步', precise: '精准更新' };
-
-const TRIGGER_COLOR: Record<string, string> = {
-  manual: 'bg-slate-500/15 text-slate-300',
-  batch: 'bg-purple-500/15 text-purple-300',
-  scheduler: 'bg-amber-500/15 text-amber-300',
-  webhook: 'bg-emerald-500/15 text-emerald-300',
-  startup: 'bg-sky-500/15 text-sky-300',
-  resume: 'bg-teal-500/15 text-teal-300',
-  enable: 'bg-pink-500/15 text-pink-300'
-};
-
-async function api<T>(path: string): Promise<T> {
-  const res = await fetch(path);
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || `请求失败（${res.status}）`);
-  return data as T;
-}
 
 export default function LogsPage() {
   const [logCount, setLogCount] = useState(0);

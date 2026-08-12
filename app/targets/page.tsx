@@ -23,6 +23,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
+import { api } from '@/lib/api';
+import { toast } from '@/components/toast-provider';
 import { cn, fmtTime } from '@/lib/utils';
 
 type Target = {
@@ -62,16 +64,6 @@ type SyncState = {
   unchanged?: number;
 };
 
-async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || `请求失败（${res.status}）`);
-  return data as T;
-}
-
 const PICK_LABEL: Record<string, string> = { added: '最新入库', premiere: '最新发行', random: '随机', manual: '手动选择' };
 
 export default function TargetsPage() {
@@ -90,8 +82,11 @@ export default function TargetsPage() {
   const [preview, setPreview] = useState<Target | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [sync, setSync] = useState<SyncState | null>(null);
+  const [forcePoll, setForcePoll] = useState(false);
   const [showDone, setShowDone] = useState(false);
-  const prevSyncActive = useRef(false);
+  const [loaded, setLoaded] = useState(false);
+  const seenActive = useRef(false);
+  const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = async () => {
     try {
@@ -100,6 +95,8 @@ export default function TargetsPage() {
       setStyles(s);
     } catch {
       // ignore
+    } finally {
+      setLoaded(true);
     }
   };
 
@@ -117,26 +114,40 @@ export default function TargetsPage() {
     loadSync();
   }, []);
 
-  // 同步进度轮询：运行/暂停中每秒刷新，结束后自动停止
+  const startSyncPolling = () => {
+    seenActive.current = true;
+    setForcePoll(true);
+    loadSync();
+  };
+
+  // 同步进度轮询：运行/暂停中或等待启动期间每秒刷新
   useEffect(() => {
-    const active = sync?.running || sync?.status === 'paused';
+    const active = forcePoll || sync?.running || sync?.status === 'paused';
     if (!active) return;
     const timer = setInterval(loadSync, 1000);
     return () => clearInterval(timer);
-  }, [sync?.running, sync?.status]);
+  }, [forcePoll, sync?.running, sync?.status]);
 
-  // 同步结束后：刷新列表并让进度卡片停留 6 秒后自动收起
+  // 同步结束：刷新列表并让进度卡片停留 6 秒后自动收起
   useEffect(() => {
-    const wasActive = prevSyncActive.current;
     const isActive = !!sync?.running || sync?.status === 'paused';
-    prevSyncActive.current = isActive;
-    if (!sync || isActive || sync.status === 'idle') return;
-    if (!wasActive && !showDone) return; // 页面加载时遇到旧的完成状态，不弹进度卡
+    if (isActive) {
+      seenActive.current = true;
+      setShowDone(false);
+      if (doneTimer.current) {
+        clearTimeout(doneTimer.current);
+        doneTimer.current = null;
+      }
+      return;
+    }
+    if (!sync || sync.status === 'idle') return;
+    setForcePoll(false);
+    if (!seenActive.current) return; // 页面加载时遇到旧的完成状态，不弹进度卡
     setShowDone(true);
     load();
-    const t = setTimeout(() => setShowDone(false), 6000);
-    return () => clearTimeout(t);
-  }, [sync?.running, sync?.status, sync?.status === 'idle']);
+    if (doneTimer.current) clearTimeout(doneTimer.current);
+    doneTimer.current = setTimeout(() => setShowDone(false), 6000);
+  }, [sync?.running, sync?.status]);
 
   const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || styles.styleByKind?.library || 'single');
   const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${effStyle(t)}`] || 'added';
@@ -156,16 +167,23 @@ export default function TargetsPage() {
   const selectedSingle = selected.size === 1 ? targets.find((t) => selected.has(t.id)) ?? null : null;
 
   const updateTarget = async (id: string, body: Record<string, unknown>) => {
-    await api(`/api/targets/${id}`, { method: 'PUT', body: JSON.stringify(body) });
-    await load();
+    try {
+      await api(`/api/targets/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      await load();
+    } catch (e: any) {
+      toast('err', e.message);
+    }
   };
 
   const generate = async (id: string) => {
     setBusy(id);
     try {
       await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
+      toast('ok', '封面已重新生成并上传');
       await load();
       loadSync();
+    } catch (e: any) {
+      toast('err', e.message);
     } finally {
       setBusy(null);
     }
@@ -174,19 +192,37 @@ export default function TargetsPage() {
   const batch = async (action: string, value = '') => {
     const ids = [...selected];
     if (!ids.length) return;
-    await api('/api/targets/batch', { method: 'POST', body: JSON.stringify({ ids, action, value }) });
-    await load();
-    if (action === 'generate' || action === 'reset') loadSync();
+    try {
+      const r = await api<{ updated: number }>('/api/targets/batch', { method: 'POST', body: JSON.stringify({ ids, action, value }) });
+      if (action === 'generate') toast('info', `已开始批量更新封面（${r.updated} 项）`);
+      else if (action === 'reset') toast('info', `已恢复默认配置，正在重新生成封面（${r.updated} 项）`);
+      else if (action === 'enable') toast('ok', `已取消锁定（${r.updated} 项）`);
+      else if (action === 'disable') toast('ok', `已锁定（${r.updated} 项）`);
+      await load();
+      if (action === 'generate' || action === 'reset') startSyncPolling();
+    } catch (e: any) {
+      toast('err', e.message);
+    }
   };
 
   const syncAll = async () => {
-    await api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true }) });
-    loadSync();
+    toast('info', '开始同步所有未锁定封面…');
+    api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true }) })
+      .catch((e: any) => toast('err', e.message));
+    startSyncPolling();
   };
 
   const syncControl = async (action: 'pause' | 'resume' | 'cancel') => {
-    await api(`/api/sync/${action}`, { method: 'POST', body: '{}' });
-    loadSync();
+    try {
+      await api(`/api/sync/${action}`, { method: 'POST', body: '{}' });
+      if (action === 'resume') {
+        seenActive.current = true;
+        setForcePoll(true);
+      }
+      loadSync();
+    } catch (e: any) {
+      toast('err', e.message);
+    }
   };
 
   const openPicker = async (t: Target) => {
@@ -208,8 +244,8 @@ export default function TargetsPage() {
     const id = selectedSingle.id;
     const timer = setTimeout(async () => {
       try {
-        const body: Record<string, unknown> = { style: pending.style, pickBy: pending.pickBy };
-        if (pending.pickBy === 'manual') {
+        const body: Record<string, unknown> = { style: pending.style, pickBy: pending.style === 'single' ? pending.pickBy : 'added' };
+        if (body.pickBy === 'manual') {
           if (!pending.manualItemId) return;
           body.manualItemId = pending.manualItemId;
           body.manualItemName = pending.manualItemName;
@@ -225,18 +261,28 @@ export default function TargetsPage() {
 
   const saveConfig = async (t: Target) => {
     if (!pending) return;
-    const withLock = pending.pickBy === 'manual';
-    const body: Record<string, unknown> = { template: pending.style, pickBy: pending.pickBy, locked: withLock };
-    if (pending.pickBy === 'manual') {
-      if (!pending.manualItemId) return;
+    const style = pending.style;
+    const pickBy = style === 'single' ? pending.pickBy : 'added'; // 海报墙样式不支持手动/随机
+    const withLock = pickBy === 'manual';
+    const body: Record<string, unknown> = { template: style, pickBy, locked: withLock };
+    if (pickBy === 'manual') {
+      if (!pending.manualItemId) {
+        toast('err', '手动选择需要先选择一部封面影片');
+        return;
+      }
       body.manualItemId = pending.manualItemId;
       body.manualItemName = pending.manualItemName;
     }
-    await updateTarget(t.id, body);
-    await generate(t.id);
-    setPending(null);
-    setSelected(new Set());
-    setDrafts({});
+    try {
+      await updateTarget(t.id, body);
+      toast('info', withLock ? '配置已保存并锁定，正在更新封面…' : '配置已保存，正在更新封面…');
+      await generate(t.id);
+      setPending(null);
+      setSelected(new Set());
+      setDrafts({});
+    } catch (e: any) {
+      toast('err', `保存失败：${e.message}`);
+    }
   };
 
   const clearFilters = () => {
@@ -251,7 +297,14 @@ export default function TargetsPage() {
   const syncPct = sync?.total ? Math.round(((sync?.done || 0) / sync.total) * 100) : 0;
   const syncActive = !!sync?.running || sync?.status === 'paused';
   const syncJustDone = sync && !sync.running && sync.status !== 'idle' && sync.status !== 'paused';
-  const syncVisible = syncActive || (syncJustDone && showDone);
+  const syncVisible = syncActive || forcePoll || (syncJustDone && showDone);
+  const syncStatusText = syncActive
+    ? `${syncLabels[sync?.status || ''] || sync?.status} · ${sync?.done ?? 0} / ${sync?.total ?? 0}（${syncPct}%）`
+    : forcePoll && !syncJustDone
+      ? '准备中…'
+      : syncJustDone
+        ? `${syncLabels[sync?.status || ''] || sync?.status} · ${sync?.done ?? 0} / ${sync?.total ?? 0}（${syncPct}%）`
+        : '';
 
   return (
     <div className="space-y-4">
@@ -296,7 +349,7 @@ export default function TargetsPage() {
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold">封面更新进度</span>
             <span className="text-xs text-muted-foreground">
-              {syncLabels[sync?.status || ''] || sync?.status || '空闲'} · {sync?.done ?? 0} / {sync?.total ?? 0}（{syncPct}%）
+              {syncStatusText}
               {sync?.current ? ` · 正在处理：${sync.current}` : ''}
               {sync?.failed ? ` · 失败 ${sync.failed} 个` : ''}
               {sync?.updated ? ` · 已更新 ${sync.updated} 个` : ''}
@@ -359,10 +412,19 @@ export default function TargetsPage() {
       </div>
 
       <div className="space-y-2">
+        {!loaded ? (
+          <div className="rounded-md border bg-card p-6 text-center text-sm text-muted-foreground">加载中…</div>
+        ) : !visible.length ? (
+          <div className="rounded-md border bg-card p-6 text-center text-sm text-muted-foreground">
+            <ImageIcon className="mx-auto mb-2 h-6 w-6 text-muted-foreground/40" />
+            没有符合条件的合集
+          </div>
+        ) : null}
         {visible.map((t) => {
           const isSelected = selected.has(t.id);
           const pick = effPick(t);
           const style = effStyle(t);
+          const effPendingPick = pending ? (pending.style === 'single' ? pending.pickBy : 'added') : pick;
           const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
           const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount ?? 0} 部影片`;
           return (
@@ -408,7 +470,7 @@ export default function TargetsPage() {
                     {fmtTime(t.lastGeneratedAt)} 生成 · {pickLabel(pick)} · {countText}
                     {style === 'single' && t.posterSource ? <span className="block truncate">海报来源：{t.posterSource}</span> : null}
                   </div>
-                  {t.lastError ? <div className="mt-1 flex items-center gap-1 text-xs text-red-400"><AlertIcon /> {t.lastError}</div> : null}
+                  {t.lastError ? <div className="mt-1 flex items-center gap-1 text-xs text-red-400"><AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {t.lastError}</div> : null}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <Button size="sm" className="w-[74px]" disabled={t.locked || busy === t.id} onClick={(e) => { e.stopPropagation(); generate(t.id); }}>
@@ -453,19 +515,19 @@ export default function TargetsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-muted-foreground">选图依据</span>
                     <div className="flex gap-1.5">
-                      <PickBtn active={(pending?.pickBy || pick) === 'added'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'added' })}>
+                      <PickBtn active={effPendingPick === 'added'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'added' })}>
                         最新入库
                       </PickBtn>
-                      <PickBtn active={(pending?.pickBy || pick) === 'premiere'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'premiere' })}>
+                      <PickBtn active={effPendingPick === 'premiere'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'premiere' })}>
                         最新发行
                       </PickBtn>
                       {(pending?.style || style) === 'single' ? (
                         <>
-                          <PickBtn active={(pending?.pickBy || pick) === 'random'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'random' })}>
+                          <PickBtn active={effPendingPick === 'random'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'random' })}>
                             随机
                           </PickBtn>
                           <PickBtn
-                            active={(pending?.pickBy || pick) === 'manual'}
+                            active={effPendingPick === 'manual'}
                             disabled={t.locked}
                             onClick={() => {
                               setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'manual' });
@@ -523,8 +585,11 @@ export default function TargetsPage() {
                 setPreviewBusy(true);
                 try {
                   await api(`/api/targets/${preview.id}/generate`, { method: 'POST', body: '{}' });
+                  toast('ok', '封面已更新并上传');
                   await load();
                   setPreview(null);
+                } catch (e: any) {
+                  toast('err', e.message);
                 } finally {
                   setPreviewBusy(false);
                 }
@@ -634,15 +699,5 @@ function PickBtn({ active, disabled, onClick, children }: { active?: boolean; di
     >
       {children}
     </button>
-  );
-}
-
-function AlertIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" className="h-3.5 w-3.5 shrink-0">
-      <path d="M8 2.5 14.5 13h-13z" strokeLinejoin="round" />
-      <path d="M8 6.5v3" strokeLinecap="round" />
-      <circle cx="8" cy="11.2" r="0.8" fill="currentColor" stroke="none" />
-    </svg>
   );
 }

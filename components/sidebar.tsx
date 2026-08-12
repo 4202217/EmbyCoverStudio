@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Film, LayoutDashboard, Images, Settings, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api';
 import { useEffect, useState } from 'react';
 
 const NAV = [
@@ -21,16 +22,14 @@ export function Sidebar({ version }: { version: string }) {
   const [status, setStatus] = useState<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string }; stats?: { failed?: number } } | null>(null);
 
   useEffect(() => {
-    fetch('/api/changelog')
-      .then((r) => r.json())
+    api<{ text: string }>('/api/changelog')
       .then((d) => setChangelog(d.text || '暂无更新记录'))
       .catch(() => setChangelog('暂无更新记录'));
   }, []);
 
   useEffect(() => {
     const load = () => {
-      fetch('/api/status')
-        .then((r) => r.json())
+      api<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string }; stats?: { failed?: number } }>('/api/status')
         .then(setStatus)
         .catch(() => setStatus(null));
     };

@@ -1,25 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { api, rawFetch } from '@/lib/api';
+import { toast } from '@/components/toast-provider';
 import { cn, fmtTime } from '@/lib/utils';
 
 type Settings = Record<string, any>;
 type Status = { lastRun?: string; lastReason?: string; lastError?: string; nextRun?: string; counts?: Record<string, number>; webhook?: { url?: string; lastEvent?: string; lastEventAt?: string; test?: { armed?: boolean; result?: { event?: string; at?: string } } } };
-
-async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || `请求失败（${res.status}）`);
-  return data as T;
-}
 
 const GROUPS = [
   { key: 'library-single', label: '媒体库·单图海报' },
@@ -31,7 +23,6 @@ export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [group, setGroup] = useState('library-single');
-  const [msg, setMsg] = useState('');
   const [status, setStatus] = useState<Status | null>(null);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [waiting, setWaiting] = useState(false);
@@ -40,6 +31,14 @@ export default function SettingsPage() {
   const [targets, setTargets] = useState<{ id: string; name: string; kind: string; missing?: boolean }[]>([]);
   const [previewSrc, setPreviewSrc] = useState('');
   const [loading, setLoading] = useState(false);
+  const webhookTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (webhookTimer.current) clearInterval(webhookTimer.current);
+    },
+    []
+  );
 
   const cur = draft?.coverByStyle?.[group] || {};
   const curPick = draft?.defaultPickByByStyle?.[group] || 'added';
@@ -77,6 +76,14 @@ export default function SettingsPage() {
     return () => clearTimeout(timer);
   }, [group, cur, curPick, previewSource]);
 
+  // 切换配置组时，预览数据源类型不匹配则自动清空
+  useEffect(() => {
+    if (!previewSource) return;
+    const kind = group.startsWith('library') ? 'library' : 'collection';
+    const t = targets.find((x) => x.id === previewSource);
+    if (t && t.kind !== kind) setPreviewSource('');
+  }, [group, targets, previewSource]);
+
   const load = async () => {
     try {
       const r = await api<{ settings: Settings }>('/api/settings');
@@ -103,10 +110,9 @@ export default function SettingsPage() {
       const r = await api<{ settings: Settings }>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) });
       setS(r.settings);
       setDraft(r.settings);
-      setMsg('已保存');
-      setTimeout(() => setMsg(''), 2000);
+      toast('ok', '已保存');
     } catch (e: any) {
-      setMsg(`保存失败：${e.message}`);
+      toast('err', `保存失败：${e.message}`);
     }
   };
 
@@ -118,15 +124,26 @@ export default function SettingsPage() {
     });
   };
 
-
   const exportBackup = async () => {
-    const res = await fetch('/api/export');
-    const blob = await res.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `emby-cover-studio-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    try {
+      const res = await rawFetch('/api/export');
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `导出失败（HTTP ${res.status}）`);
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const name = `emby-cover-studio-backup-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('ok', `备份已导出 ${name}`);
+    } catch (e: any) {
+      toast('err', e.message);
+    }
   };
 
   const importBackup = (file: File) => {
@@ -134,13 +151,13 @@ export default function SettingsPage() {
     reader.onload = async () => {
       try {
         const data = JSON.parse(String(reader.result));
-        if (!data?.version || !data.settings || !data.targets) throw new Error('格式不正确');
+        if (!data || data.version !== 1 || !data.settings || !data.targets) throw new Error('备份文件格式不正确或版本不匹配');
         if (!window.confirm('导入将覆盖当前全部配置与数据，确定继续吗？')) return;
         await api('/api/import', { method: 'POST', body: JSON.stringify({ data }) });
-        setMsg('导入成功');
+        toast('ok', '导入成功，正在刷新…');
         load();
       } catch (e: any) {
-        setMsg(`导入失败：${e.message}`);
+        toast('err', `导入失败：${e.message}`);
       }
     };
     reader.readAsText(file);
@@ -149,29 +166,37 @@ export default function SettingsPage() {
   const startWebhookTest = async () => {
     setWaiting(true);
     setWaitMsg('等待接收中…请到 Emby Webhooks 插件点击「测试通知」（60 秒超时）');
-    await api('/api/webhook/test/arm', { method: 'POST', body: '{}' });
+    try {
+      await api('/api/webhook/test/arm', { method: 'POST', body: '{}' });
+    } catch (e: any) {
+      setWaiting(false);
+      setWaitMsg(`启动失败：${e.message}`);
+      return;
+    }
     const start = Date.now();
-    const timer = setInterval(async () => {
+    webhookTimer.current = setInterval(async () => {
       const st = await api<Status>('/api/status').catch(() => null);
       if (st?.webhook?.test?.result) {
-        clearInterval(timer);
+        if (webhookTimer.current) clearInterval(webhookTimer.current);
+        webhookTimer.current = null;
         setWaiting(false);
         setWaitMsg(`已收到测试通知（事件：${st.webhook.test.result.event} · ${fmtTime(st.webhook.test.result.at)}）`);
         setStatus(st);
+        toast('ok', '已收到 Emby 测试通知');
         return;
       }
       if (Date.now() - start > 60000) {
-        clearInterval(timer);
+        if (webhookTimer.current) clearInterval(webhookTimer.current);
+        webhookTimer.current = null;
         setWaiting(false);
-        setWaitMsg('60 秒内未收到，请确认插件配置');
+        setWaitMsg('60 秒内未收到，请确认插件已配置此地址并点击了「测试通知」');
       }
     }, 2000);
   };
 
   const saveAndRegen = async () => {
-    setMsg('正在保存并重新生成…');
     try {
-      await api('/api/settings', {
+      const r = await api<{ settings: Settings }>('/api/settings', {
         method: 'PUT',
         body: JSON.stringify({
           styleByKind: draft.styleByKind,
@@ -179,14 +204,34 @@ export default function SettingsPage() {
           coverByStyle: draft.coverByStyle
         })
       });
+      setS(r.settings);
+      setDraft(r.settings);
       const kind = group.startsWith('library') ? 'library' : 'collection';
       const style = group.endsWith('-wall3') ? 'wall3' : 'single';
       const label = `${kind === 'library' ? '媒体库' : '合集'}·${style === 'wall3' ? '海报墙' : '单图海报'}`;
-      await api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true, onlyKind: kind, onlyStyle: style }) });
-      setMsg(`设置已保存，开始重新生成${label}封面（仅未锁定项）`);
+      api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true, onlyKind: kind, onlyStyle: style }) }).catch((e: any) => toast('err', e.message));
+      toast('info', `设置已保存，开始重新生成${label}封面（仅未锁定项）`);
     } catch (e: any) {
-      setMsg(`保存失败：${e.message}`);
+      toast('err', `保存失败：${e.message}`);
     }
+  };
+
+  const saveWebdavSettings = async () => {
+    const r = await api<{ settings: Settings }>('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        webdavUrl: draft.webdavUrl,
+        webdavUser: draft.webdavUser,
+        webdavPassword: draft.webdavPassword,
+        webdavFile: draft.webdavFile,
+        webdavAutoBackup: draft.webdavAutoBackup,
+        webdavIntervalHours: draft.webdavIntervalHours,
+        webdavSync: draft.webdavSync
+      })
+    });
+    setS(r.settings);
+    setDraft(r.settings);
+    return r.settings;
   };
 
   const webdav = draft;
@@ -204,14 +249,12 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <div className="mb-1 text-xs text-muted-foreground">服务器地址</div>
+            <Field label="服务器地址">
               <Input value={draft.embyUrl || ''} placeholder="http://192.168.1.100:8096" onChange={(e) => setDraft({ ...draft, embyUrl: e.target.value })} />
-            </div>
-            <div>
-              <div className="mb-1 text-xs text-muted-foreground">API 密钥</div>
+            </Field>
+            <Field label="API 密钥">
               <Input type="password" value={draft.embyApiKey || ''} onChange={(e) => setDraft({ ...draft, embyApiKey: e.target.value })} />
-            </div>
+            </Field>
           </div>
           <div className="flex gap-2">
             <Button onClick={() => save({ embyUrl: draft.embyUrl, embyApiKey: draft.embyApiKey })}>保存连接设置</Button>
@@ -220,9 +263,9 @@ export default function SettingsPage() {
               onClick={async () => {
                 try {
                   const r = await api<{ serverName?: string; version?: string }>('/api/emby/test', { method: 'POST', body: JSON.stringify({ embyUrl: draft.embyUrl, embyApiKey: draft.embyApiKey }) });
-                  setMsg(`连接成功：${r.serverName} v${r.version}`);
+                  toast('ok', `连接成功：${r.serverName} v${r.version}`);
                 } catch (e: any) {
-                  setMsg(`连接失败：${e.message}`);
+                  toast('err', `连接失败：${e.message}`);
                 }
               }}
             >
@@ -238,14 +281,12 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <div className="mb-1 text-xs text-muted-foreground">定时同步 cron</div>
+            <Field label="定时同步 cron">
               <Input value={draft.cron || ''} onChange={(e) => setDraft({ ...draft, cron: e.target.value })} />
-            </div>
-            <div>
-              <div className="mb-1 text-xs text-muted-foreground">Webhook 防抖（毫秒）</div>
+            </Field>
+            <Field label="Webhook 防抖（毫秒）">
               <Input type="number" value={draft.webhookDebounceMs ?? 20000} onChange={(e) => setDraft({ ...draft, webhookDebounceMs: Number(e.target.value) })} />
-            </div>
+            </Field>
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-xs">
@@ -405,7 +446,7 @@ export default function SettingsPage() {
                     </option>
                   ))}
               </Select>
-              <div className="relative">
+              <div className="relative min-h-[140px]">
                 {previewSrc ? (
                   <img
                     src={previewSrc}
@@ -434,10 +475,18 @@ export default function SettingsPage() {
           <div className="border-t pt-3">
             <div className="mb-2 text-sm font-semibold">WebDAV 同步</div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Input placeholder="https://dav.example.com/dav/emby-cover-studio" value={webdav.webdavUrl || ''} onChange={(e) => setDraft({ ...draft, webdavUrl: e.target.value })} />
-              <Input placeholder="用户名" value={webdav.webdavUser || ''} onChange={(e) => setDraft({ ...draft, webdavUser: e.target.value })} />
-              <Input type="password" placeholder="密码" value={webdav.webdavPassword || ''} onChange={(e) => setDraft({ ...draft, webdavPassword: e.target.value })} />
-              <Input value={webdav.webdavFile || 'backup.json'} onChange={(e) => setDraft({ ...draft, webdavFile: e.target.value })} />
+              <Field label="WebDAV 地址">
+                <Input placeholder="https://dav.example.com/dav/emby-cover-studio" value={webdav.webdavUrl || ''} onChange={(e) => setDraft({ ...draft, webdavUrl: e.target.value })} />
+              </Field>
+              <Field label="用户名">
+                <Input placeholder="用户名" value={webdav.webdavUser || ''} onChange={(e) => setDraft({ ...draft, webdavUser: e.target.value })} />
+              </Field>
+              <Field label="密码">
+                <Input type="password" placeholder="密码" value={webdav.webdavPassword || ''} onChange={(e) => setDraft({ ...draft, webdavPassword: e.target.value })} />
+              </Field>
+              <Field label="备份文件名">
+                <Input value={webdav.webdavFile || 'backup.json'} onChange={(e) => setDraft({ ...draft, webdavFile: e.target.value })} />
+              </Field>
             </div>
             <div className="mt-2 flex items-center gap-2 text-xs">
               <Switch checked={!!webdav.webdavAutoBackup} onCheckedChange={(v) => setDraft({ ...draft, webdavAutoBackup: v })} />
@@ -461,16 +510,16 @@ export default function SettingsPage() {
               </label>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => save({ webdavUrl: draft.webdavUrl, webdavUser: draft.webdavUser, webdavPassword: draft.webdavPassword, webdavFile: draft.webdavFile, webdavAutoBackup: draft.webdavAutoBackup, webdavIntervalHours: draft.webdavIntervalHours, webdavSync: draft.webdavSync })}>
+              <Button size="sm" variant="outline" onClick={async () => { try { await saveWebdavSettings(); toast('ok', 'WebDAV 设置已保存'); } catch (e: any) { toast('err', `保存失败：${e.message}`); } }}>
                 保存设置
               </Button>
-              <Button size="sm" variant="outline" onClick={async () => { try { await api('/api/webdav/test', { method: 'POST', body: '{}' }); setMsg('连接正常'); } catch (e: any) { setMsg(`连接失败：${e.message}`); } }}>
+              <Button size="sm" variant="outline" onClick={async () => { try { await saveWebdavSettings(); await api('/api/webdav/test', { method: 'POST', body: '{}' }); toast('ok', 'WebDAV 连接正常'); } catch (e: any) { toast('err', `连接失败：${e.message}`); } }}>
                 测试连接
               </Button>
-              <Button size="sm" onClick={async () => { try { const r = await api<{ url?: string }>('/api/webdav/backup', { method: 'POST', body: '{}' }); setMsg(`已备份到 ${r.url}`); } catch (e: any) { setMsg(`备份失败：${e.message}`); } }}>
+              <Button size="sm" onClick={async () => { try { await saveWebdavSettings(); const r = await api<{ url?: string }>('/api/webdav/backup', { method: 'POST', body: '{}' }); toast('ok', `已备份到 ${r.url}`); load(); } catch (e: any) { toast('err', `备份失败：${e.message}`); } }}>
                 立即备份
               </Button>
-              <Button size="sm" variant="outline" onClick={async () => { if (!window.confirm('从 WebDAV 恢复将覆盖当前数据，确定？')) return; try { await api('/api/webdav/restore', { method: 'POST', body: '{}' }); setMsg('已恢复'); load(); } catch (e: any) { setMsg(`恢复失败：${e.message}`); } }}>
+              <Button size="sm" variant="outline" onClick={async () => { if (!window.confirm('从 WebDAV 恢复将覆盖当前数据，确定？')) return; try { await saveWebdavSettings(); await api('/api/webdav/restore', { method: 'POST', body: '{}' }); toast('ok', '已从 WebDAV 恢复备份'); load(); } catch (e: any) { toast('err', `恢复失败：${e.message}`); } }}>
                 从 WebDAV 恢复
               </Button>
             </div>
@@ -489,7 +538,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {msg ? <div className="text-sm text-muted-foreground">{msg}</div> : null}
     </div>
   );
 }
