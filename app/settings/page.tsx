@@ -322,7 +322,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <div className="flex flex-col gap-6 lg:flex-row">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
         <Card className="flex-1">
           <CardHeader>
             <CardTitle>封面配置</CardTitle>
@@ -382,9 +382,9 @@ export default function SettingsPage() {
             </Field>
 
             {(cur.backgroundMode || 'gradient') === 'gradient' ? (
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-xs">背景顶部 <input type="color" value={cur.bgTop || '#17233d'} onChange={(e) => setGroupDraft({ bgTop: e.target.value })} /></label>
-                <label className="flex items-center gap-2 text-xs">背景底部 <input type="color" value={cur.bgBottom || '#0a0f1c'} onChange={(e) => setGroupDraft({ bgBottom: e.target.value })} /></label>
+              <div className="flex flex-wrap gap-2">
+                <ColorField label="背景顶部" value={cur.bgTop || '#17233d'} onChange={(v) => setGroupDraft({ bgTop: v })} />
+                <ColorField label="背景底部" value={cur.bgBottom || '#0a0f1c'} onChange={(v) => setGroupDraft({ bgBottom: v })} />
               </div>
             ) : null}
 
@@ -402,39 +402,42 @@ export default function SettingsPage() {
               <p className="mt-1 text-[11px] text-muted-foreground/70">按输出宽度等比缩放</p>
             </Field>
 
-            <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-xs">强调色 <input type="color" value={cur.accent || '#00a4dc'} onChange={(e) => setGroupDraft({ accent: e.target.value })} /></label>
-              <label className="flex items-center gap-2 text-xs">标题颜色 <input type="color" value={cur.titleColor || '#ffffff'} onChange={(e) => setGroupDraft({ titleColor: e.target.value })} /></label>
-              <label className="flex items-center gap-2 text-xs">副标题颜色 <input type="color" value={cur.subtitleColor || '#c9d6f2'} onChange={(e) => setGroupDraft({ subtitleColor: e.target.value })} /></label>
+            <div className="flex flex-wrap gap-2">
+              <ColorField label="强调色" value={cur.accent || '#00a4dc'} onChange={(v) => setGroupDraft({ accent: v })} />
+              <ColorField label="标题颜色" value={cur.titleColor || '#ffffff'} onChange={(v) => setGroupDraft({ titleColor: v })} />
+              <ColorField label="副标题颜色" value={cur.subtitleColor || '#c9d6f2'} onChange={(v) => setGroupDraft({ subtitleColor: v })} />
               <label className="flex items-center gap-2 text-xs">
                 <Switch checked={cur.showCount !== false} onCheckedChange={(v) => setGroupDraft({ showCount: v })} />
                 显示数量副标题
               </label>
             </div>
 
-            <Button
-              onClick={() =>
-                save({
-                  styleByKind: draft.styleByKind,
-                  defaultPickByByStyle: draft.defaultPickByByStyle,
-                  coverByStyle: draft.coverByStyle
-                })
-              }
-            >
-              保存封面配置
-            </Button>
-            <Button variant="outline" onClick={saveAndRegen}>
-              保存并重新生成当前配置封面
-            </Button>
+            <div className="flex flex-col gap-2 pt-1">
+              <Button
+                className="w-full"
+                onClick={() =>
+                  save({
+                    styleByKind: draft.styleByKind,
+                    defaultPickByByStyle: draft.defaultPickByByStyle,
+                    coverByStyle: draft.coverByStyle
+                  })
+                }
+              >
+                保存封面配置
+              </Button>
+              <Button variant="outline" className="w-full" onClick={saveAndRegen}>
+                保存并重新生成当前配置封面
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
-        <div className="w-full shrink-0 space-y-3 lg:w-80">
-          <Card>
+        <div className="w-full shrink-0 lg:flex lg:w-80 lg:flex-col">
+          <Card className="flex flex-1 flex-col">
             <CardHeader>
               <CardTitle>实时预览</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="flex flex-1 flex-col justify-center gap-3">
               <Select value={previewSource} onChange={(e) => setPreviewSource(e.target.value)}>
                 <option value="">占位图</option>
                 {targets
@@ -446,15 +449,23 @@ export default function SettingsPage() {
                     </option>
                   ))}
               </Select>
-              <div className="relative min-h-[140px]">
+              <div
+                className={cn(
+                  'relative mx-auto overflow-hidden rounded-lg border bg-muted/30',
+                  group.startsWith('library') ? 'aspect-video w-full' : 'aspect-[2/3] w-40'
+                )}
+              >
                 {previewSrc ? (
                   <img
+                    key={previewSrc}
                     src={previewSrc}
                     alt="封面预览"
-                    className={cn('rounded-lg border', group.startsWith('library') ? 'w-full' : 'w-40')}
+                    className="absolute inset-0 h-full w-full animate-in fade-in object-cover duration-200"
                   />
                 ) : null}
-                {loading ? <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 text-xs text-white">生成中…</div> : null}
+                {loading ? (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 text-xs text-white">生成中…</div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -548,5 +559,23 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <div className="mb-1.5 text-xs font-semibold text-muted-foreground">{label}</div>
       {children}
     </div>
+  );
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:border-primary/50 hover:text-foreground">
+      <span className="relative h-[18px] w-[18px] shrink-0 overflow-hidden rounded border border-input">
+        <span className="absolute inset-0" style={{ backgroundColor: value }} />
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="absolute inset-0 cursor-pointer opacity-0"
+          aria-label={label}
+        />
+      </span>
+      <span>{label}</span>
+    </label>
   );
 }
