@@ -61,6 +61,44 @@ export function createApi(app) {
     }
   }
 
+  let updateCheckCache = { at: 0, value: null };
+  async function checkUpdate() {
+    const now = Date.now();
+    if (updateCheckCache.value && now - updateCheckCache.at < 3600000) return updateCheckCache.value;
+    const current = PKG.version || '0.0.0';
+    // jsDelivr CDN 国内通常可访问，GitHub 原站兜底
+    const sources = [
+      'https://cdn.jsdelivr.net/gh/4202217/EmbyCoverStudio@main/package.json',
+      'https://raw.githubusercontent.com/4202217/EmbyCoverStudio/main/package.json'
+    ];
+    for (const url of sources) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const remote = await res.json();
+        const latest = String(remote.version || '').trim();
+        updateCheckCache = {
+          at: now,
+          value: {
+            ok: true,
+            current,
+            latest,
+            hasUpdate: Boolean(latest && latest !== current)
+          }
+        };
+        return updateCheckCache.value;
+      } catch (e) {
+        // 继续尝试下一个数据源
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    updateCheckCache = { at: now, value: { ok: false, error: '无法连接版本源', current } };
+    return updateCheckCache.value;
+  }
+
   async function getEmbyStatus() {
     const now = Date.now();
     if (embyStatusCache.value && now - embyStatusCache.at < 15000) return embyStatusCache.value;
@@ -188,6 +226,11 @@ export function createApi(app) {
         text = '暂无更新记录';
       }
       return okJson({ ok: true, text });
+    }
+
+    // GET /api/update/check
+    if (m === 'GET' && p === '/update/check') {
+      return okJson({ ok: true, ...(await checkUpdate()) });
     }
 
     // POST /api/import

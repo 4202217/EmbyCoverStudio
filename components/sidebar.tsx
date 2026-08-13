@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Film, LayoutDashboard, Images, Settings, ScrollText } from 'lucide-react';
+import { Film, LayoutDashboard, Images, Settings, ScrollText, Sparkles, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
@@ -19,6 +19,7 @@ export function Sidebar({ version }: { version: string }) {
   const pathname = usePathname();
   const [changelog, setChangelog] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [update, setUpdate] = useState<{ hasUpdate?: boolean; current?: string; latest?: string } | null>(null);
   const [status, setStatus] = useState<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string }; stats?: { failed?: number } } | null>(null);
 
   useEffect(() => {
@@ -35,6 +36,17 @@ export function Sidebar({ version }: { version: string }) {
     };
     load();
     const timer = setInterval(load, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const check = () => {
+      api<{ hasUpdate?: boolean; current?: string; latest?: string }>('/api/update/check')
+        .then(setUpdate)
+        .catch(() => setUpdate(null));
+    };
+    check();
+    const timer = setInterval(check, 6 * 60 * 60 * 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -82,16 +94,33 @@ export function Sidebar({ version }: { version: string }) {
           {state.text}
         </div>
       </div>
-      <Button variant="link" className="h-auto justify-start px-1 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
+      <Button variant="link" className="h-auto justify-start gap-1.5 px-1 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
         v{version}
+        {update?.hasUpdate ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+            <Sparkles className="h-2.5 w-2.5" />
+            有新版本
+          </span>
+        ) : null}
       </Button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(false)}>
           <div className="max-h-[75vh] w-full max-w-lg overflow-auto rounded-lg border bg-card p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold">更新记录</h2>
-              <button className="text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>✕</button>
+              <button className="text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)} aria-label="关闭">
+                <X className="h-4 w-4" />
+              </button>
             </div>
+            {update?.hasUpdate ? (
+              <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+                <div className="mb-1 font-semibold text-amber-300">发现新版本 v{update.latest}</div>
+                <div className="text-muted-foreground">当前运行 v{update.current}。更新镜像后即可升级：</div>
+                <code className="mt-1.5 block rounded bg-black/30 px-2 py-1.5 font-mono text-[11px] text-amber-100/90">
+                  cd /vol2/1000/Docker/embycoverstudio && sudo sh update-embystudio.sh
+                </code>
+              </div>
+            ) : null}
             <div className="max-h-[60vh] overflow-auto text-xs leading-relaxed">{changelog ? <Markdown text={changelog} /> : '加载中…'}</div>
           </div>
         </div>
