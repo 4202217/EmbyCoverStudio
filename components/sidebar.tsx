@@ -115,10 +115,11 @@ export function Sidebar({ version }: { version: string }) {
             {update?.hasUpdate ? (
               <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
                 <div className="mb-1 font-semibold text-amber-300">发现新版本 v{update.latest}</div>
-                <div className="text-muted-foreground">当前运行 v{update.current}。更新镜像后即可升级：</div>
+                <div className="text-muted-foreground">当前运行 v{update.current}。在你的 NAS 部署目录下执行更新即可：</div>
                 <code className="mt-1.5 block rounded bg-black/30 px-2 py-1.5 font-mono text-[11px] text-amber-100/90">
-                  cd /vol2/1000/Docker/embycoverstudio && sudo sh update-embystudio.sh
+                  sh update-embystudio.sh
                 </code>
+                <div className="mt-1 text-muted-foreground/80">或手动执行 docker compose pull &amp;&amp; docker compose up -d</div>
               </div>
             ) : null}
             <div className="max-h-[60vh] overflow-auto text-xs leading-relaxed">{changelog ? <Markdown text={changelog} /> : '加载中…'}</div>

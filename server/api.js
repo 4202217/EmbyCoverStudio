@@ -62,6 +62,17 @@ export function createApi(app) {
   }
 
   let updateCheckCache = { at: 0, value: null };
+  function cmpVersion(a, b) {
+    const pa = String(a || '').split('.').map(Number);
+    const pb = String(b || '').split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+      const x = pa[i] || 0;
+      const y = pb[i] || 0;
+      if (x > y) return 1;
+      if (x < y) return -1;
+    }
+    return 0;
+  }
   async function checkUpdate() {
     const now = Date.now();
     if (updateCheckCache.value && now - updateCheckCache.at < 3600000) return updateCheckCache.value;
@@ -85,7 +96,7 @@ export function createApi(app) {
             ok: true,
             current,
             latest,
-            hasUpdate: Boolean(latest && latest !== current)
+            hasUpdate: Boolean(latest && cmpVersion(latest, current) > 0)
           }
         };
         return updateCheckCache.value;
