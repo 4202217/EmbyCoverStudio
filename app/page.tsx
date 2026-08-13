@@ -347,13 +347,15 @@ function RecentRow({ title, items, wide, onPreview }: { title: string; items: Ta
       <ScrollArea ref={ref} className="cursor-grab">
         <div className="flex gap-3">
           {items.map((t) => (
-            <div key={t.id} className={cn('shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')} onClick={() => onPreview(t)}>
-              <img
-                src={t.coverUrl}
-                alt=""
-                title={t.kind === 'collection' || !t.template || t.template === 'single' ? t.posterSource || '' : ''}
-                className="w-full rounded-md border bg-muted/40"
-              />
+            <div key={t.id} className={cn('group shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')} onClick={() => onPreview(t)}>
+              <div className="relative overflow-hidden rounded-md border bg-muted/40">
+                <img src={t.coverUrl} alt="" className="w-full" />
+                {t.kind === 'collection' || !t.template || t.template === 'single' ? (
+                  <div className="absolute inset-x-0 bottom-0 translate-y-full bg-black/75 px-1.5 py-1 text-[10px] leading-tight text-white transition-transform duration-200 group-hover:translate-y-0">
+                    <span className="line-clamp-2">{t.posterSource || '未知来源影片'}</span>
+                  </div>
+                ) : null}
+              </div>
               {t.lastTrigger ? (
                 <div className="mt-1">
                   <span className={cn('inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium', TRIGGER_COLOR[t.lastTrigger] || 'bg-slate-500/20 text-slate-300')}>
