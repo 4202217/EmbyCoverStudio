@@ -73,37 +73,67 @@ export function createApi(app) {
     }
     return 0;
   }
+  function changelogSince(text, current) {
+    const blocks = [];
+    let cur = null;
+    for (const line of String(text || '').split('\n')) {
+      const m = line.match(/^##\s+v([\d.]+)/i);
+      if (m) {
+        if (cur) blocks.push(cur);
+        cur = { version: m[1], lines: [line] };
+      } else if (cur) cur.lines.push(line);
+    }
+    if (cur) blocks.push(cur);
+    return blocks
+      .filter((b) => cmpVersion(b.version, current) > 0)
+      .map((b) => b.lines.join('\n'))
+      .join('\n\n');
+  }
+  async function fetchUrl(url) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   async function checkUpdate() {
     const now = Date.now();
     if (updateCheckCache.value && now - updateCheckCache.at < 3600000) return updateCheckCache.value;
     const current = PKG.version || '0.0.0';
     // jsDelivr CDN 国内通常可访问，GitHub 原站兜底
     const sources = [
-      'https://cdn.jsdelivr.net/gh/4202217/EmbyCoverStudio@main/package.json',
-      'https://raw.githubusercontent.com/4202217/EmbyCoverStudio/main/package.json'
+      {
+        pkg: 'https://cdn.jsdelivr.net/gh/4202217/EmbyCoverStudio@main/package.json',
+        changelog: 'https://cdn.jsdelivr.net/gh/4202217/EmbyCoverStudio@main/CHANGELOG.md'
+      },
+      {
+        pkg: 'https://raw.githubusercontent.com/4202217/EmbyCoverStudio/main/package.json',
+        changelog: 'https://raw.githubusercontent.com/4202217/EmbyCoverStudio/main/CHANGELOG.md'
+      }
     ];
     for (const url of sources) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(url, { signal: controller.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const remote = await res.json();
+        const [pkgText, changelogText] = await Promise.all([fetchUrl(url.pkg), fetchUrl(url.changelog)]);
+        const remote = JSON.parse(pkgText);
         const latest = String(remote.version || '').trim();
+        const hasUpdate = Boolean(latest && cmpVersion(latest, current) > 0);
         updateCheckCache = {
           at: now,
           value: {
             ok: true,
             current,
             latest,
-            hasUpdate: Boolean(latest && cmpVersion(latest, current) > 0)
+            hasUpdate,
+            changelog: hasUpdate ? changelogSince(changelogText, current) : ''
           }
         };
         return updateCheckCache.value;
       } catch (e) {
         // 继续尝试下一个数据源
-      } finally {
-        clearTimeout(timer);
       }
     }
     updateCheckCache = { at: now, value: { ok: false, error: '无法连接版本源', current } };

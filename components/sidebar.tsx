@@ -19,7 +19,7 @@ export function Sidebar({ version }: { version: string }) {
   const pathname = usePathname();
   const [changelog, setChangelog] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [update, setUpdate] = useState<{ hasUpdate?: boolean; current?: string; latest?: string } | null>(null);
+  const [update, setUpdate] = useState<{ hasUpdate?: boolean; current?: string; latest?: string; changelog?: string } | null>(null);
   const [status, setStatus] = useState<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string }; stats?: { failed?: number } } | null>(null);
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export function Sidebar({ version }: { version: string }) {
 
   useEffect(() => {
     const check = () => {
-      api<{ hasUpdate?: boolean; current?: string; latest?: string }>('/api/update/check')
+      api<{ hasUpdate?: boolean; current?: string; latest?: string; changelog?: string }>('/api/update/check')
         .then(setUpdate)
         .catch(() => setUpdate(null));
     };
@@ -115,13 +115,14 @@ export function Sidebar({ version }: { version: string }) {
             {update?.hasUpdate ? (
               <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
                 <div className="mb-1 font-semibold text-amber-300">发现新版本 v{update.latest}</div>
-                <div className="text-muted-foreground">当前运行 v{update.current}。在你的 NAS 部署目录下执行更新即可：</div>
-                <code className="mt-1.5 block rounded bg-black/30 px-2 py-1.5 font-mono text-[11px] text-amber-100/90">
-                  sh update-embystudio.sh
-                </code>
-                <div className="mt-1 text-muted-foreground/80">或手动执行 docker compose pull &amp;&amp; docker compose up -d</div>
+                {update.changelog ? (
+                  <div className="space-y-1 text-muted-foreground">
+                    <Markdown text={update.changelog} />
+                  </div>
+                ) : null}
               </div>
             ) : null}
+            {update?.hasUpdate ? <div className="mb-3 border-t" /> : null}
             <div className="max-h-[60vh] overflow-auto text-xs leading-relaxed">{changelog ? <Markdown text={changelog} /> : '加载中…'}</div>
           </div>
         </div>
