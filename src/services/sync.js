@@ -206,6 +206,8 @@ export function createSyncService(store) {
     await fs.writeFile(localFile, png);
     fs.unlink(path.join(COVERS_DIR, `${target.id}.draft.png`)).catch(() => {});
     const now = new Date().toISOString();
+    // 强制重算但内容/设置/外部封面均无变化时，保留原生成时间，避免全量同步刷掉「最近生成」
+    const noRealChange = unchanged && target.coverFile && !coverChangedExternally;
     const basePatch = {
       itemHash: hash,
       coverSettingsHash: settingsHash,
@@ -215,8 +217,8 @@ export function createSyncService(store) {
       itemCount: total,
       posterCount: posters.length,
       posterSource: posters[0]?.name || '',
-      lastGeneratedAt: now,
-      lastTrigger: trigger || target.lastTrigger || '',
+      lastGeneratedAt: noRealChange ? target.lastGeneratedAt : now,
+      lastTrigger: noRealChange ? target.lastTrigger || '' : trigger || target.lastTrigger || '',
       needsRegen: false,
       missing: false
     };

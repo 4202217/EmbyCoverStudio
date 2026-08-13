@@ -1,6 +1,6 @@
 {
   "name": "emby-cover-studio",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Emby 媒体库/合集封面自动生成工具",
   "private": true,
   "type": "module",

@@ -33,6 +33,8 @@ type Target = {
   acknowledged?: boolean;
   locked?: boolean;
   lastTrigger?: string;
+  template?: string;
+  posterSource?: string;
 };
 
 type Task = {
@@ -77,13 +79,13 @@ export default function DashboardPage() {
 
   const failedTargets = targets.filter((t) => t.lastError && !t.acknowledged);
   const failedTasks = tasks.filter((t) => t.status === 'failed' && !t.acknowledged).slice(0, 5);
-  const recentSort = (list: Target[]) =>
+  const recentSort = (list: Target[], limit = 5) =>
     [...list]
       .filter((t) => t.coverUrl && t.lastGeneratedAt)
       .sort((a, b) => new Date(b.lastGeneratedAt!).getTime() - new Date(a.lastGeneratedAt!).getTime())
-      .slice(0, 5);
-  const recentLibs = recentSort(targets.filter((t) => t.kind === 'library'));
-  const recentCols = recentSort(targets.filter((t) => t.kind === 'collection'));
+      .slice(0, limit);
+  const recentLibs = recentSort(targets.filter((t) => t.kind === 'library'), 5);
+  const recentCols = recentSort(targets.filter((t) => t.kind === 'collection'), 8);
 
   const embyState = !status?.emby?.configured
     ? { text: '未配置', color: 'bg-slate-400' }
@@ -346,7 +348,12 @@ function RecentRow({ title, items, wide, onPreview }: { title: string; items: Ta
         <div className="flex gap-3">
           {items.map((t) => (
             <div key={t.id} className={cn('shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')} onClick={() => onPreview(t)}>
-              <img src={t.coverUrl} alt="" className="w-full rounded-md border bg-muted/40" />
+              <img
+                src={t.coverUrl}
+                alt=""
+                title={t.kind === 'collection' || !t.template || t.template === 'single' ? t.posterSource || '' : ''}
+                className="w-full rounded-md border bg-muted/40"
+              />
               {t.lastTrigger ? (
                 <div className="mt-1">
                   <span className={cn('inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium', TRIGGER_COLOR[t.lastTrigger] || 'bg-slate-500/20 text-slate-300')}>
