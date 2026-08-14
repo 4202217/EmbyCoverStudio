@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import crypto from 'node:crypto';
 import { DB_FILE, DATA_DIR, COVERS_DIR, CACHE_DIR } from './config.js';
-import { isValidStyle } from './covers/styles.js';
+import { isValidStyle, pickDefault } from './covers/styles.js';
 
 export function randomToken(len = 16) {
   return crypto.randomBytes(len).toString('hex');
@@ -22,21 +21,19 @@ export function defaultSettings() {
     webdavIntervalHours: 24,
     webdavLastBackup: '',
     webdavSync: { settings: true, targets: true, tasks: true },
-    defaultStyle: 'single',
-    styleByKind: { library: 'single', collection: 'single' },
     defaultPickByByStyle: {
       'library-single': 'added',
-      'library-wall3': 'added',
+      'library-wall': 'added',
       'collection-single': 'added'
     },
     cron: '0 */6 * * *',
     autoEnableNew: true,
     syncOnStart: true,
+    excludeUsedPosters: false,
+    outputFormat: 'png',
     webhookDebounceMs: 20000,
     coverByStyle: {
       'library-single': {
-        width: 1600,
-        height: 900,
         titleSize: 84,
         subtitleSize: 36,
         titleColor: '#ffffff',
@@ -51,9 +48,7 @@ export function defaultSettings() {
         fontFamily: 'Noto Sans CJK SC',
         fontFile: ''
       },
-      'library-wall3': {
-        width: 1600,
-        height: 900,
+      'library-wall': {
         titleSize: 84,
         subtitleSize: 36,
         titleColor: '#ffffff',
@@ -69,8 +64,6 @@ export function defaultSettings() {
         fontFile: ''
       },
       'collection-single': {
-        width: 1000,
-        height: 1500,
         titleSize: 84,
         subtitleSize: 36,
         titleColor: '#ffffff',
@@ -89,7 +82,7 @@ export function defaultSettings() {
   };
 }
 
-const COVER_NUM_FIELDS = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
+const COVER_NUM_FIELDS = ['titleSize', 'subtitleSize', 'radius', 'cellBorder'];
 const COVER_BOOL_FIELDS = ['showCount'];
 const COVER_STR_FIELDS = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
 
@@ -110,6 +103,9 @@ function sanitizeCover(patch) {
   for (const k of COVER_STR_FIELDS) {
     if (patch && k in patch) cover[k] = String(patch[k] ?? '').trim();
   }
+  // 尺寸由目标类型固定决定（媒体库 16:9 / 合集 2:3），不接受配置
+  delete cover.width;
+  delete cover.height;
   return cover;
 }
 
@@ -134,47 +130,39 @@ function sanitizeSettings(patch) {
       tasks: m.tasks !== false
     };
   }
-  if ('defaultStyle' in patch) out.defaultStyle = String(patch.defaultStyle || 'single');
   if ('defaultPickBy' in patch) {
     // 兼容旧字段：同时写入三套默认值
     const d = patch.defaultPickBy === 'premiere' ? 'premiere' : 'added';
-    out.defaultPickByByStyle = { 'library-single': d, 'library-wall3': d, 'collection-single': d };
+    out.defaultPickByByStyle = { 'library-single': d, 'library-wall': d, 'collection-single': d };
   }
   if ('defaultPickByByKind' in patch) {
     const s = patch.defaultPickByByKind || {};
-    const lib = ['premiere', 'random'].includes(s.library) ? s.library : 'added';
-    const col = ['premiere', 'random'].includes(s.collection) ? s.collection : 'added';
+    const lib = pickDefault(s.library);
+    const col = pickDefault(s.collection);
     out.defaultPickByByStyle = {
       'library-single': lib,
-      'library-wall3': lib,
+      'library-wall': lib,
       'collection-single': col
     };
   }
   if ('defaultPickByByStyle' in patch) {
     const s = patch.defaultPickByByStyle || {};
     out.defaultPickByByStyle = {
-      'library-single': ['premiere', 'random'].includes(s['library-single']) ? s['library-single'] : 'added',
-      'library-wall3': ['premiere', 'random'].includes(s['library-wall3']) ? s['library-wall3'] : 'added',
-      'collection-single': ['premiere', 'random'].includes(s['collection-single']) ? s['collection-single'] : 'added'
-    };
-  }
-  if ('styleByKind' in patch) {
-    const s = patch.styleByKind || {};
-    out.styleByKind = {
-      library: s.library === 'wall3' ? 'wall3' : 'single',
-      collection: 'single'
+      'library-single': pickDefault(s['library-single']),
+      'library-wall': pickDefault(s['library-wall']),
+      'collection-single': pickDefault(s['collection-single'])
     };
   }
   if ('cover' in patch) {
     // 兼容旧字段：同时应用到三套配置
     const c = sanitizeCover(patch.cover);
-    out.coverByStyle = { 'library-single': c, 'library-wall3': c, 'collection-single': c };
+    out.coverByStyle = { 'library-single': c, 'library-wall': c, 'collection-single': c };
   }
   if ('coverByKind' in patch) {
     const c = patch.coverByKind || {};
     out.coverByStyle = {
       'library-single': sanitizeCover(c.library),
-      'library-wall3': sanitizeCover(c.library),
+      'library-wall': sanitizeCover(c.library),
       'collection-single': sanitizeCover(c.collection)
     };
   }
@@ -182,13 +170,15 @@ function sanitizeSettings(patch) {
     const c = patch.coverByStyle || {};
     out.coverByStyle = {
       'library-single': sanitizeCover(c['library-single']),
-      'library-wall3': sanitizeCover(c['library-wall3']),
+      'library-wall': sanitizeCover(c['library-wall']),
       'collection-single': sanitizeCover(c['collection-single'])
     };
   }
   if ('cron' in patch) out.cron = String(patch.cron || '0 */6 * * *').trim();
   if ('autoEnableNew' in patch) out.autoEnableNew = !!patch.autoEnableNew;
   if ('syncOnStart' in patch) out.syncOnStart = !!patch.syncOnStart;
+  if ('excludeUsedPosters' in patch) out.excludeUsedPosters = !!patch.excludeUsedPosters;
+  if ('outputFormat' in patch) out.outputFormat = patch.outputFormat === 'webp' ? 'webp' : 'png';
   if ('webhookDebounceMs' in patch) out.webhookDebounceMs = clampInt(patch.webhookDebounceMs, 0, 600000, 20000);
   return out;
 }
@@ -209,6 +199,8 @@ export class Store {
   constructor(file = DB_FILE) {
     this.file = file;
     this.data = null;
+    this._saveTimer = null;
+    this._saveDelayMs = 200;
     this.load();
   }
 
@@ -250,7 +242,7 @@ export class Store {
       const col = st.defaultPickByByKind.collection === 'premiere' ? 'premiere' : 'added';
       st.defaultPickByByStyle = {
         'library-single': lib,
-        'library-wall3': lib,
+        'library-wall': lib,
         'collection-single': col
       };
       delete st.defaultPickByByKind;
@@ -260,16 +252,36 @@ export class Store {
       const col = st.coverByKind.collection || {};
       st.coverByStyle = {
         'library-single': { ...(st.coverByStyle?.['library-single'] || {}), ...lib, width: 1600, height: 900 },
-        'library-wall3': { ...(st.coverByStyle?.['library-wall3'] || {}), ...lib, width: 1600, height: 900 },
+        'library-wall': { ...(st.coverByStyle?.['library-wall'] || {}), ...lib, width: 1600, height: 900 },
         'collection-single': { ...(st.coverByStyle?.['collection-single'] || {}), ...col, width: 1000, height: 1500 }
       };
       delete st.coverByKind;
     }
-    // 迁移：只保留单图/极简两种样式
-    if (!isValidStyle(this.data.settings.defaultStyle)) this.data.settings.defaultStyle = 'single';
+    // 迁移：旧墙样式 wall3/wall5/wall-h 统一 → 竖向 wall-v
+    const cbs = st.coverByStyle || {};
+    if (cbs['library-wall3']) {
+      cbs['library-wall'] = { ...(cbs['library-wall'] || {}), ...cbs['library-wall3'] };
+      delete cbs['library-wall3'];
+    }
+    delete cbs['library-wall5'];
+    const dpp = st.defaultPickByByStyle || {};
+    if (dpp['library-wall3'] !== undefined) dpp['library-wall'] = dpp['library-wall3'];
+    delete dpp['library-wall3'];
+    delete dpp['library-wall5'];
     for (const t of Object.values(this.data.targets)) {
-      // 空 template 表示跟随所属类型的全局默认
+      if (t.template === 'wall3' || t.template === 'wall5' || t.template === 'wall-h') t.template = 'wall-v';
+    }
+    // 迁移：清理非法样式模板（未配置的媒体库固定使用单图海报）
+    for (const t of Object.values(this.data.targets)) {
       if (t.template && !isValidStyle(t.template)) t.template = '';
+    }
+    // 迁移：尺寸由目标类型固定决定，清理历史遗留的 width/height 配置
+    for (const key of Object.keys(this.data.settings.coverByStyle || {})) {
+      const c = this.data.settings.coverByStyle[key];
+      if (c && typeof c === 'object') {
+        delete c.width;
+        delete c.height;
+      }
     }
     // 迁移：旧版本把「跟随全局默认」误存成了 added，统一改为空值
     if (!this.data.settings.pickByMigrated) {
@@ -291,15 +303,37 @@ export class Store {
         // 只有明确保存过配置（如手动选片）才视为手动配置
         t.configured = Boolean(t.manualItemId);
       }
-      if (t.embyCoverHash === undefined) t.embyCoverHash = '';
+      if (t.embyCoverTag === undefined) t.embyCoverTag = '';
+      if (t.chosenItemId === undefined) t.chosenItemId = '';
+      // 旧版存的是封面内容哈希，与新的图片 tag 不可比，直接丢弃
+      if (t.embyCoverHash !== undefined) delete t.embyCoverHash;
     }
-    this.save();
+    // 加载后立即落盘一次（持久化迁移结果），不经过 debounce
+    this.saveSync();
   }
 
+  // 合并高频写入：多次 save() 在极短时间内只落盘一次，避免同步阻塞事件循环
   save() {
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      this.saveSync();
+    }, this._saveDelayMs);
+  }
+
+  saveSync() {
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
     fs.renameSync(tmp, this.file);
+  }
+
+  // 立即落盘（进程退出、测试收尾等场景），并取消未决的 debounce
+  flush() {
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+    }
+    this.saveSync();
   }
 
   get settings() {
@@ -329,14 +363,14 @@ export class Store {
       collectionType: '',
       enabled: true,
       template: '',
-      size: '',
       titleOverride: '',
       configured: false,
       lastTrigger: '',
       itemHash: '',
       coverFile: '',
       coverHash: '',
-      embyCoverHash: '',
+      embyCoverTag: '',
+      chosenItemId: '',
       itemCount: 0,
       posterCount: 0,
       manualItemId: '',

@@ -6,5 +6,6 @@ data/
 *.log
 .DS_Store
 样式示例/
+public/samples/
 demo-cover.png
 preview-*.png

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
@@ -23,30 +23,45 @@ export function DataTable<T extends { [k: string]: any }>({
   fetchData,
   emptyText = '暂无数据',
   initialSort = null,
-  onLoaded
+  onLoaded,
+  fetchPage,
+  pageSize = 50
 }: {
   columns: Column<T>[];
   fetchData: () => Promise<T[]>;
   emptyText?: string;
   initialSort?: { key: string; dir: 1 | -1 } | null;
   onLoaded?: (rows: T[]) => void;
+  fetchPage?: (page: number, pageSize: number) => Promise<{ rows: T[]; total: number }>;
+  pageSize?: number;
 }) {
   const [rows, setRows] = useState<T[] | null>(null);
   const [sort, setSort] = useState<Sort>(initialSort);
   const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
   const [popup, setPopup] = useState<{ key: string; x: number; y: number; width: number } | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadSeq = useRef(0);
+  const firstPage = useRef(true);
 
-  const load = async (animate = true) => {
+  const load = async (animate = true, targetPage = page) => {
     const seq = ++loadSeq.current;
     if (animate) setLoading(true);
     try {
-      const data = await fetchData();
-      if (seq !== loadSeq.current) return;
-      setRows(data);
-      onLoaded?.(data);
+      if (fetchPage) {
+        const r = await fetchPage(targetPage, pageSize);
+        if (seq !== loadSeq.current) return;
+        setRows(r.rows);
+        setTotal(r.total);
+        onLoaded?.(r.rows);
+      } else {
+        const data = await fetchData();
+        if (seq !== loadSeq.current) return;
+        setRows(data);
+        onLoaded?.(data);
+      }
     } catch {
       if (seq === loadSeq.current) setRows([]);
     } finally {
@@ -58,6 +73,16 @@ export function DataTable<T extends { [k: string]: any }>({
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!fetchPage) return;
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    load(true, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   useEffect(() => {
     if (!popup) return;
@@ -217,7 +242,21 @@ export function DataTable<T extends { [k: string]: any }>({
         </div>
       ) : null}
 
-      <div className="mt-2 flex items-center justify-end gap-2">
+      <div className="mt-2 flex items-center justify-between gap-2">
+        {fetchPage ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>共 {total} 条</span>
+            <Button size="sm" variant="outline" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+              上一页
+            </Button>
+            <span>{page} / {Math.max(1, Math.ceil(total / pageSize))}</span>
+            <Button size="sm" variant="outline" disabled={page >= Math.ceil(total / pageSize) || loading} onClick={() => setPage((p) => p + 1)}>
+              下一页
+            </Button>
+          </div>
+        ) : (
+          <span />
+        )}
         <Button
           size="sm"
           variant="outline"

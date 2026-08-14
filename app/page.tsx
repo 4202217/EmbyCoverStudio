@@ -271,29 +271,40 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <Modal open={!!previewTarget} onClose={() => setPreviewTarget(null)} title="封面预览">
+      <Modal open={!!previewTarget} onClose={() => setPreviewTarget(null)} title="封面预览" className="max-w-3xl">
         {previewTarget ? (
-          <div className="flex flex-col items-start gap-4 sm:flex-row">
-            <div className="shrink-0">
+          <div>
+            <div className="flex items-center justify-center">
               {previewTarget.coverUrl ? (
                 <img
                   src={`${previewTarget.coverUrl}?v=${encodeURIComponent(previewTarget.lastGeneratedAt || Date.now())}`}
-                  alt=""
-                  className={cn('rounded-lg border', previewTarget.kind === 'library' ? 'w-72' : 'w-44')}
+                  alt={previewTarget.name}
+                  className="max-h-[62vh] max-w-full rounded border object-contain"
                 />
               ) : (
-                <div className="flex h-40 w-40 items-center justify-center rounded-lg border text-xs text-muted-foreground">
+                <div className="flex h-56 w-full items-center justify-center rounded border text-xs text-muted-foreground">
                   尚未生成封面
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                展示当前已生成的封面{previewTarget.lastGeneratedAt ? `（${fmtTime(previewTarget.lastGeneratedAt)} 生成）` : ''}，不会重复合成。
-              </p>
-              <Button size="sm" disabled={generating} onClick={updatePreview}>
-                {generating ? '生成中…' : '更新并上传'}
-              </Button>
+            <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                <div className="text-sm font-semibold text-foreground">{previewTarget.name}</div>
+                <div>
+                  {previewTarget.kind === 'library' ? '媒体库' : '合集'}
+                  {previewTarget.lastGeneratedAt ? ` · 生成于 ${fmtTime(previewTarget.lastGeneratedAt)}` : ''}
+                </div>
+                {previewTarget.posterSource ? <div>海报来源：{previewTarget.posterSource}</div> : null}
+                {previewTarget.lastError ? <div className="text-red-400">最近错误：{previewTarget.lastError}</div> : null}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button size="sm" variant="outline" onClick={() => setPreviewTarget(null)}>
+                  关闭
+                </Button>
+                <Button size="sm" disabled={generating} onClick={updatePreview}>
+                  {generating ? '生成中…' : '更新并上传'}
+                </Button>
+              </div>
             </div>
           </div>
         ) : null}

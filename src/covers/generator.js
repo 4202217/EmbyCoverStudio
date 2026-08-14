@@ -77,18 +77,27 @@ async function accentBar(width, height, color) {
 async function textLayer({ text, size, color, width, height, family, file, align = 'centre' }) {
   const fontDesc = `${family} ${size}`;
   const markup = `<span font="${fontDesc}" foreground="${color}" font_weight="bold">${escXml(text)}</span>`;
-  const buf = await sharp({
+  // 用足够宽的盒渲染，避免 vips_text 因宽度不足自动缩小字号；渲染后裁剪到字形边界
+  const renderW = Math.max(10, Math.floor(width), Math.floor(size * 6));
+  const rendered = await sharp({
     text: {
       text: markup,
       font: family,
       fontfile: file || undefined,
-      width: Math.max(10, Math.floor(width)),
+      width: renderW,
       height: Math.max(10, Math.floor(height)),
       align,
       rgba: true
     }
   }).png().toBuffer();
-  return buf;
+  const trimmed = sharp(rendered).trim();
+  const meta = await trimmed.metadata();
+  // 超出目标宽度时等比缩小到 width 内（贴合可用区域，避免溢出布局）
+  let out = trimmed;
+  if (meta.width > width) {
+    out = trimmed.resize({ width: Math.floor(width) });
+  }
+  return out.png().toBuffer();
 }
 
 async function posterCell(buffer, w, h, radius, border, borderColor) {
@@ -230,34 +239,128 @@ async function layoutSingle(ctx, list) {
 }
 
 /**
- * 海报墙：左侧文字（左对齐、字号偏小），右侧为向右倾斜 30-45° 的海报墙
+ * 大标题：整幅海报模糊背景 + 居中大标题（hero）
  */
-async function layoutWall(ctx, list) {
+async function layoutHero(ctx, list) {
   const { W, H } = ctx;
-  const pad = Math.round(W * 0.07); // 文字左间距（与上间距保持一致）
-  const angle = 30; // 向右倾斜角度
-  const rows = 3;
-  const gapX = Math.max(5, Math.round(13 * ctx.scale));
-  const gapY = Math.max(5, Math.round(13 * ctx.scale));
+  const poster = list[0];
+  // 无海报时退化为渐变背景（用于库内无媒体时的兜底封面）
+  const bg = poster
+    ? await posterBackground(poster, W, H)
+    : await backgroundLayer(W, H, ctx.settings.bgTop || '#17233d', ctx.settings.bgBottom || '#0a0f1c', ctx.settings.accent || '#00a4dc');
+  const layers = [{ input: bg }];
+  const t = await titleLayers({
+    ctx,
+    maxW: W - Math.round(W * 0.14),
+    align: 'center',
+    cx: W / 2,
+    titleSize: Math.round(ctx.titleSize * 1.3),
+    subtitleSize: Math.round(ctx.subtitleSize * 1.1),
+    centerIn: 0
+  });
+  for (const l of t.layers) l.top += Math.max(0, Math.round((H - t.height) / 2));
+  layers.push(...t.layers);
+  return layers;
+}
+
+// 竖向标题条（三列横排）：媒体库名竖排 ｜ 蓝色竖分割线 ｜ 副标题竖排，整块垂直居中
+// 文字逐字渲染并手动堆叠（字形 ≈ 2×请求字号），精确控制字间距
+async function verticalTitleStrip(ctx, H) {
+  const chars = [...ctx.title];
+  const charCount = chars.length || 1;
+  const pad = Math.max(12, Math.round(ctx.W * 0.04)); // 左侧边距
+
+  const renderStack = async (text, targetH, color, boxW) => {
+    const layers = [];
+    let maxW = 0;
+    for (const ch of [...text]) {
+      if (/\s/.test(ch)) continue; // 跳过空白字符（如副标题中的空格）
+      const buf = await textLayer({ text: ch, size: Math.max(8, Math.round(targetH / 2)), color, width: boxW, height: Math.round(targetH * 1.5), family: ctx.family, file: ctx.file, align: 'centre' });
+      const m = await sharp(buf).metadata();
+      layers.push({ buf, meta: m });
+      if (m.width > maxW) maxW = m.width;
+    }
+    return { layers, maxW, count: layers.length };
+  };
+
+  const gapRatio = 0.62; // 字间距 = 字高的 62%
+  const titleTarget = Math.max(16, Math.min(Math.round(ctx.titleSize * 0.72), Math.floor((H * 0.92) / (charCount * (1 + gapRatio)))));
+  const titleGap = Math.max(4, Math.round(titleTarget * gapRatio));
+  const { layers: titleLayers, maxW: titleMaxW } = await renderStack(ctx.title, titleTarget, ctx.settings.titleColor || '#ffffff', Math.round(H * 0.6));
+  const titleH = titleLayers.length * titleTarget + (titleLayers.length - 1) * titleGap;
+  const comps = titleLayers.map((l, i) => ({
+    input: l.buf,
+    left: pad + Math.round((titleMaxW - l.meta.width) / 2),
+    top: Math.max(0, Math.round((H - titleH) / 2)) + i * (titleTarget + titleGap)
+  }));
+  let width = pad + titleMaxW;
+
+  if (ctx.subtitle) {
+    const subChars = [...ctx.subtitle];
+    const colGap = Math.max(8, Math.round(titleTarget * 0.25)); // 对称列间距（收窄）
+    // 分隔条：与其它样式完全相同的横向强调条，用 sharp 旋转 90° 竖起来
+    const barLen = Math.max(56, Math.min(Math.round(titleMaxW * 1.3), Math.round(ctx.W * 0.5)));
+    const barThick = Math.max(3, Math.round(5 * ctx.scale));
+    const hbar = await accentBar(barLen, barThick, ctx.settings.accent || '#00a4dc');
+    const line = await sharp(hbar).rotate(90).png().toBuffer();
+    const lineMeta = await sharp(line).metadata();
+    // 三列对齐居中：标题｜分隔条｜副标题，全部垂直居中，分隔条落在两列间隙正中
+    const divX = pad + titleMaxW + colGap + Math.round((colGap - lineMeta.width) / 2);
+    const subX = pad + titleMaxW + 2 * colGap + lineMeta.width;
+    comps.push({ input: line, left: divX, top: Math.round((H - lineMeta.height) / 2) });
+    width = subX;
+    // 副标题按实际字符数（跳过空格）算高度预算，避免三位数作品数被挤压；并限制不超过标题列高度
+    // 副标题字间距单独调大（保证每字之间有明显空隙）
+    const subGapRatio = 0.9;
+    const glyphCount = subChars.filter((ch) => !/\s/.test(ch)).length || 1;
+    const subTarget = Math.max(10, Math.min(
+      Math.round(ctx.subtitleSize * 0.55),
+      Math.floor((H * 0.92) / (glyphCount * (1 + subGapRatio))),
+      Math.floor(Math.max(titleH, H * 0.45) / (glyphCount * (1 + subGapRatio)))
+    ));
+    const subGap = Math.max(3, Math.round(subTarget * subGapRatio));
+    const { layers: subLayers, maxW: subMaxW } = await renderStack(ctx.subtitle, subTarget, ctx.settings.subtitleColor || '#c9d6f2', Math.round(H * 0.5));
+    const subH = subLayers.length * subTarget + (subLayers.length - 1) * subGap;
+    subLayers.forEach((l, i) => {
+      comps.push({
+        input: l.buf,
+        left: width + Math.round((subMaxW - l.meta.width) / 2),
+        top: Math.max(0, Math.round((H - subH) / 2)) + i * (subTarget + subGap)
+      });
+    });
+    width += subMaxW;
+  }
+  width += Math.round(pad * 0.5); // 右侧留少量边距
+  const buffer = await sharp({ create: { width, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite(comps)
+    .png()
+    .toBuffer();
+  return { buffer, width };
+}
+
+// 竖向瀑布流海报墙：左侧竖向标题条，右侧 2:3 原比例瀑布流（倾斜、铺满并右/下出血）
+async function layoutWaterfall(ctx, list) {
+  const { W, H } = ctx;
+  const angle = 18; // 倾斜角度
+  const gapX = Math.max(5, Math.round(12 * ctx.scale));
+  const gapY = Math.max(5, Math.round(12 * ctx.scale));
   const cols = 3;
-  const pw = Math.round(W * 0.19); // 海报更大
+  const rows = Math.ceil(list.length / cols);
+  const pw = Math.round(W * 0.21); // 海报更大（竖向标题条让位）
   const ph = Math.round(pw * 1.5);
-  const staggerY = Math.round(ph * 0.42); // 偶数列纵向错位
-  const firstColDown = Math.round(ph * 0.25); // 第一列单独下移 1/4 海报高度
-  const wallW = cols * pw + (cols - 1) * gapX;
-  const wallH = rows * ph + (rows - 1) * gapY + staggerY;
-  const smallRadius = Math.max(2, Math.round(ctx.radius * 0.45)); // 圆角更小
+  const stagger = Math.round(ph * 0.45);
 
   const comps = [];
-  for (let r = 0; r < rows; r += 1) {
-    for (let c = 0; c < cols; c += 1) {
-      const idx = r * cols + c;
+  for (let c = 0; c < cols; c += 1) {
+    for (let r = 0; r < rows; r += 1) {
+      const idx = c * rows + r; // 列主序填充
       if (idx >= list.length) break;
-      const cell = await posterCell(list[idx], pw, ph, smallRadius, ctx.border, 'rgba(255,255,255,0.35)');
-      const colOff = c === 0 ? firstColDown : (c % 2 === 1 ? staggerY : 0); // 第一列再下移，偶数列错位
-      comps.push({ input: cell, left: c * (pw + gapX), top: r * (ph + gapY) + colOff });
+      const cell = await posterCell(list[idx], pw, ph, Math.max(2, Math.round(ctx.radius * 0.45)), ctx.border, 'rgba(255,255,255,0.35)');
+      comps.push({ input: cell, left: c * (pw + gapX), top: c * stagger + r * (ph + gapY) });
     }
   }
+  const wallW = cols * pw + (cols - 1) * gapX;
+  const wallH = (cols - 1) * stagger + rows * ph + (rows - 1) * gapY;
   const wallPng = await sharp({
     create: { width: wallW, height: wallH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
   }).composite(comps).png().toBuffer();
@@ -266,12 +369,12 @@ async function layoutWall(ctx, list) {
 
   // 在更大的画布上合成，让海报墙从上下/右侧溢出画面，再裁剪回目标尺寸，形成无限流
   const bleedTop = Math.max(0, Math.round((meta.height - H) / 2)) + Math.round(H * 0.08);
-  const shiftDown = Math.round(H * 0.09); // 海报墙整体下移，覆盖左下角
+  const shiftDown = Math.round(H * 0.08);
   const bleedBottom = Math.max(0, Math.round((meta.height - H) / 2)) + Math.round(H * 0.08) + shiftDown;
-
-  // 文字固定在左上角，海报墙整体右移后从右到左填满剩余空间（并向右溢出一点）
-  const wallLeft = Math.max(pad, Math.round(W * 0.28)); // 整体再往左移，可见部分约占 3/5
-  const bleedRight = Math.max(pad, Math.round(wallLeft + meta.width - W) + pad);
+  // 竖向标题条（三列）占左侧，瀑布流从条右侧开始
+  const strip = await verticalTitleStrip(ctx, H);
+  const wallLeft = strip.width + Math.round(W * 0.025);
+  const bleedRight = Math.max(12, Math.round(wallLeft + meta.width - W) + Math.round(W * 0.04));
   const canvasW = W + bleedRight;
   const canvasH = H + bleedTop + bleedBottom;
   const wallTop = Math.round((H - meta.height) / 2) + bleedTop + shiftDown;
@@ -279,20 +382,8 @@ async function layoutWall(ctx, list) {
   const bg = ctx.bg || await backgroundLayer(W, H, ctx.settings.bgTop || '#17233d', ctx.settings.bgBottom || '#0a0f1c', ctx.settings.accent || '#00a4dc');
   const layers = [{ input: bg, left: 0, top: bleedTop }];
   layers.push({ input: rotated, left: wallLeft, top: wallTop });
-
-  // 文字区域向右侧扩展到海报墙可见边缘，避免大字号过早换行
-  const textW = Math.max(120, Math.round(W * 0.36) - pad);
-  const textTop = pad; // 上与左间距保持一致
-  const t = await titleLayers({
-    ctx,
-    maxW: textW,
-    align: 'left',
-    cx: pad,
-    titleSize: Math.round(ctx.titleSize * 0.68),
-    subtitleSize: Math.round(ctx.subtitleSize * 0.85)
-  });
-  for (const l of t.layers) l.top += bleedTop + textTop;
-  layers.push(...t.layers);
+  // 竖向标题条覆盖在最上层
+  layers.push({ input: strip.buffer, left: 0, top: bleedTop });
 
   const full = await sharp({
     create: { width: canvasW, height: canvasH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }
@@ -307,14 +398,15 @@ async function layoutWall(ctx, list) {
  * @param {string} [opts.subtitle] 副标题（如影片数量）
  * @param {Buffer[]} opts.posters 影片封面图
  * @param {object} opts.settings 封面设置（cover 字段）
- * @param {string} [opts.style] 样式（single 单图海报 / wall3 海报墙）
+ * @param {string} [opts.style] 样式（single 单图 / hero 大标题 / wall-v 竖向海报墙）
  * @param {object} [opts.font] 字体信息
  */
 export async function generateCover({ title, subtitle = '', posters = [], settings = {}, style = 'single', font }) {
   const W = clampInt(settings.width, 200, 4096, 1000);
   const H = clampInt(settings.height, 200, 4096, 1500);
   const list = posters.filter(Boolean);
-  if (!list.length) throw new Error('没有可用的影片封面，无法生成');
+  // hero 允许无海报（用渐变背景兜底），其余样式必须至少一张海报
+  if (!list.length && style !== 'hero') throw new Error('没有可用的影片封面，无法生成');
 
   const fontInfo = font || resolveFont(settings);
   const family = fontInfo.family || 'Noto Sans CJK SC';
@@ -325,11 +417,11 @@ export async function generateCover({ title, subtitle = '', posters = [], settin
   }
 
   let layers;
-  if (style === 'wall3') {
-    // 海报墙直接返回最终成图（含溢出裁剪）
-    return layoutWall(ctx, list);
+  if (style === 'wall-v') {
+    // 海报墙：竖向瀑布流（2:3 原比例、倾斜、铺满右侧）
+    return layoutWaterfall(ctx, list);
   }
-  layers = await layoutSingle(ctx, list);
+  layers = style === 'hero' ? await layoutHero(ctx, list) : await layoutSingle(ctx, list);
 
   return sharp({
     create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }

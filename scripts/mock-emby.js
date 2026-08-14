@@ -28,6 +28,7 @@ const collections = [
 
 const imageCache = new Map();
 const uploads = {};
+const coverTags = {};
 
 function allItems() {
   return [
@@ -173,6 +174,28 @@ export async function startMock({ port = 8199, host = '127.0.0.1' } = {}) {
       return;
     }
 
+    const itemInfoMatch = p.match(/^\/emby\/(?:Users\/[^/]+\/)?Items\/([^/]+)$/);
+    if (req.method === 'GET' && itemInfoMatch) {
+      const id = itemInfoMatch[1];
+      const it = allItems().find((i) => i.id === id);
+      if (it) {
+        send(res, 200, JSON.stringify(itemToDto(it)));
+        return;
+      }
+      const lib = libraries.find((l) => l.ItemId === id);
+      if (lib) {
+        send(res, 200, JSON.stringify({ Id: lib.ItemId, Name: lib.Name, Type: 'CollectionFolder', ImageTags: coverTags[id] ? { Primary: coverTags[id] } : {} }));
+        return;
+      }
+      const col = collections.find((c) => c.Id === id);
+      if (col) {
+        send(res, 200, JSON.stringify({ Id: col.Id, Name: col.Name, Type: 'BoxSet', ImageTags: coverTags[id] ? { Primary: coverTags[id] } : {} }));
+        return;
+      }
+      send(res, 404, JSON.stringify({ error: 'no item' }));
+      return;
+    }
+
     const imageMatch = p.match(/^\/emby\/(?:Users\/[^/]+\/)?Items\/([^/]+)\/Images\/Primary$/);
     if (imageMatch) {
       const id = imageMatch[1];
@@ -204,6 +227,7 @@ export async function startMock({ port = 8199, host = '127.0.0.1' } = {}) {
           bytes: decoded.length,
           lastAt: new Date().toISOString()
         };
+        coverTags[id] = 'tag-' + uploads[id].count;
         send(res, 204, '');
         return;
       }

@@ -1,6 +1,6 @@
 import { info, error } from '../src/logger.js';
-import { parseCron } from '../src/scheduler.js';
 import { getApp } from './app.js';
+import { setupCron } from './cron.js';
 import { buildWebdavBackupData, webdavPut } from './backup.js';
 
 export function startBackground() {
@@ -9,19 +9,7 @@ export function startBackground() {
   app.backgroundStarted = true;
   const { store, syncService, scheduler } = app;
 
-  function setupCron() {
-    const expr = store.settings.cron || '0 */6 * * *';
-    try {
-      parseCron(expr);
-      scheduler.remove('cover-sync');
-      scheduler.add('cover-sync', expr, () => syncService.runSync({ reason: '定时任务' }));
-      info(`定时任务已设置：${expr}`);
-    } catch {
-      info(`cron 表达式无效：${expr}`);
-    }
-  }
-
-  setupCron();
+  setupCron(app);
   scheduler.start();
 
   setTimeout(() => {

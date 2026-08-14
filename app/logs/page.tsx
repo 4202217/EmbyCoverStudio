@@ -136,6 +136,11 @@ export default function LogsPage() {
           <DataTable
             columns={taskColumns}
             fetchData={() => api<{ tasks: Task[] }>('/api/tasks').then((r) => r.tasks || [])}
+            fetchPage={async (page, pageSize) => {
+              const r = await api<{ tasks: Task[]; total: number }>(`/api/tasks?page=${page}&pageSize=${pageSize}`);
+              return { rows: r.tasks || [], total: r.total || 0 };
+            }}
+            pageSize={50}
             emptyText="暂无任务记录"
             initialSort={{ key: 'seq', dir: -1 }}
           />

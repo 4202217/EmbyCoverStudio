@@ -15,9 +15,17 @@ type Status = { lastRun?: string; lastReason?: string; lastError?: string; nextR
 
 const GROUPS = [
   { key: 'library-single', label: '媒体库·单图海报' },
-  { key: 'library-wall3', label: '媒体库·海报墙' },
+  { key: 'library-wall', label: '媒体库·海报墙' },
   { key: 'collection-single', label: '合集·单图海报' }
 ];
+
+// 字号滑动条的有效区间（超出上限受布局空间限制不再变大）
+const SIZE_RANGE: Record<string, { title: [number, number]; subtitle: [number, number] }> = {
+  'library-single': { title: [40, 120], subtitle: [20, 65] },
+  'library-wall': { title: [40, 140], subtitle: [20, 70] },
+  'collection-single': { title: [40, 120], subtitle: [20, 65] }
+};
+const clampRange = (v: number | undefined, [min, max]: [number, number]) => Math.min(max, Math.max(min, Number(v) || min));
 
 export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
@@ -47,7 +55,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       const q = new URLSearchParams({
-        style: group.endsWith('-wall3') ? 'wall3' : 'single',
+        style: group.endsWith('-wall') ? 'wall-v' : 'single',
         size: group.startsWith('library') ? 'thumb' : 'poster',
         backgroundMode: cur.backgroundMode || 'gradient',
         title: group.startsWith('library') ? '媒体库' : '合集',
@@ -199,16 +207,16 @@ export default function SettingsPage() {
       const r = await api<{ settings: Settings }>('/api/settings', {
         method: 'PUT',
         body: JSON.stringify({
-          styleByKind: { library: 'single', collection: 'single' },
           defaultPickByByStyle: draft.defaultPickByByStyle,
-          coverByStyle: draft.coverByStyle
+          coverByStyle: draft.coverByStyle,
+          outputFormat: draft.outputFormat
         })
       });
       setS(r.settings);
       setDraft(r.settings);
       const kind = group.startsWith('library') ? 'library' : 'collection';
-      const style = group.endsWith('-wall3') ? 'wall3' : 'single';
-      const label = `${kind === 'library' ? '媒体库' : '合集'}·${style === 'wall3' ? '海报墙' : '单图海报'}`;
+      const style = group.endsWith('-wall') ? 'wall' : 'single';
+      const label = `${kind === 'library' ? '媒体库' : '合集'}·${style === 'wall' ? '海报墙' : '单图海报'}`;
       api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true, onlyKind: kind, onlyStyle: style }) }).catch((e: any) => toast('err', e.message));
       toast('info', `设置已保存，开始重新生成${label}封面（仅未锁定项）`);
     } catch (e: any) {
@@ -297,8 +305,12 @@ export default function SettingsPage() {
               <Switch checked={!!draft.syncOnStart} onCheckedChange={(v) => setDraft({ ...draft, syncOnStart: v })} />
               服务启动时自动同步
             </label>
+            <label className="flex items-center gap-2 text-xs">
+              <Switch checked={!!draft.excludeUsedPosters} onCheckedChange={(v) => setDraft({ ...draft, excludeUsedPosters: v })} />
+              避免复用其它封面已用的海报
+            </label>
           </div>
-          <Button onClick={() => save({ cron: draft.cron, webhookDebounceMs: draft.webhookDebounceMs, autoEnableNew: draft.autoEnableNew, syncOnStart: draft.syncOnStart })}>
+          <Button onClick={() => save({ cron: draft.cron, webhookDebounceMs: draft.webhookDebounceMs, autoEnableNew: draft.autoEnableNew, syncOnStart: draft.syncOnStart, excludeUsedPosters: draft.excludeUsedPosters })}>
             保存自动更新设置
           </Button>
 
@@ -374,15 +386,35 @@ export default function SettingsPage() {
             <Field label="字号">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-xs text-muted-foreground">标题字号</span>
-                  <Input type="number" min={18} max={480} value={cur.titleSize ?? 84} onChange={(e) => setGroupDraft({ titleSize: Number(e.target.value) })} />
+                  <span className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>标题字号</span>
+                    <span className="tabular-nums">{clampRange(cur.titleSize, SIZE_RANGE[group]?.title || [40, 120])}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={SIZE_RANGE[group]?.title[0] ?? 40}
+                    max={SIZE_RANGE[group]?.title[1] ?? 120}
+                    value={clampRange(cur.titleSize, SIZE_RANGE[group]?.title || [40, 120])}
+                    onChange={(e) => setGroupDraft({ titleSize: Number(e.target.value) })}
+                    className="w-full accent-primary"
+                  />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs text-muted-foreground">副标题字号</span>
-                  <Input type="number" min={12} max={240} value={cur.subtitleSize ?? 36} onChange={(e) => setGroupDraft({ subtitleSize: Number(e.target.value) })} />
+                  <span className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>副标题字号</span>
+                    <span className="tabular-nums">{clampRange(cur.subtitleSize, SIZE_RANGE[group]?.subtitle || [20, 65])}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={SIZE_RANGE[group]?.subtitle[0] ?? 20}
+                    max={SIZE_RANGE[group]?.subtitle[1] ?? 65}
+                    value={clampRange(cur.subtitleSize, SIZE_RANGE[group]?.subtitle || [20, 65])}
+                    onChange={(e) => setGroupDraft({ subtitleSize: Number(e.target.value) })}
+                    className="w-full accent-primary"
+                  />
                 </label>
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground/70">按输出宽度等比缩放</p>
+              <p className="mt-1 text-[11px] text-muted-foreground/70">按输出等比缩放；受布局空间限制，标题/副标题较长时会自动贴合可用区域</p>
             </Field>
 
             <div className="flex flex-wrap gap-2">
@@ -395,14 +427,19 @@ export default function SettingsPage() {
               </label>
             </div>
 
+            <div className="flex items-center gap-2 text-xs">
+              <Switch checked={draft.outputFormat === 'webp'} onCheckedChange={(v) => setDraft({ ...draft, outputFormat: v ? 'webp' : 'png' })} />
+              无损 WebP 输出（体积更小，需 Emby 支持）
+            </div>
+
             <div className="flex flex-col gap-2 pt-1">
               <Button
                 className="w-full"
                 onClick={() =>
                   save({
-                    styleByKind: { library: 'single', collection: 'single' },
                     defaultPickByByStyle: draft.defaultPickByByStyle,
-                    coverByStyle: draft.coverByStyle
+                    coverByStyle: draft.coverByStyle,
+                    outputFormat: draft.outputFormat
                   })
                 }
               >

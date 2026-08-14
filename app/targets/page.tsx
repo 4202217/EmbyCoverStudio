@@ -47,7 +47,6 @@ type Target = {
 };
 
 type Styles = {
-  styleByKind?: { library?: string; collection?: string };
   defaultPickByByStyle?: Record<string, string>;
 };
 
@@ -66,6 +65,12 @@ type SyncState = {
 
 const PICK_LABEL: Record<string, string> = { added: '最新入库', premiere: '最新发行', random: '随机', manual: '手动选择' };
 
+// 海报墙类样式（多图拼接）不支持手动/随机选图，其余单图样式支持
+const isWall = (s: string) => s === 'wall-v';
+// 墙类样式可用的选图依据（不支持手动/随机）
+const WALL_PICKS = ['added', 'premiere'];
+const wallPickBy = (v: string) => (WALL_PICKS.includes(v) ? v : 'added');
+
 export default function TargetsPage() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [styles, setStyles] = useState<Styles>({});
@@ -78,6 +83,7 @@ export default function TargetsPage() {
   const [pending, setPending] = useState<{ style: string; pickBy: string; manualItemId: string; manualItemName: string } | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftLoading, setDraftLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [preview, setPreview] = useState<Target | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
@@ -154,7 +160,8 @@ export default function TargetsPage() {
   }, [sync?.running, sync?.status]);
 
   const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || 'single');
-  const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${effStyle(t)}`] || 'added';
+  const cfgStyle = (s: string) => (s === 'hero' ? 'single' : isWall(s) ? 'wall' : s);
+  const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${cfgStyle(effStyle(t))}`] || 'added';
   const pickLabel = (p: string) => PICK_LABEL[p] || '最新入库';
 
   const visible = useMemo(() => {
@@ -247,10 +254,14 @@ export default function TargetsPage() {
     if (!selectedSingle || !pending) return;
     const id = selectedSingle.id;
     const timer = setTimeout(async () => {
+      setDraftLoading(true);
       try {
-        const body: Record<string, unknown> = { style: pending.style, pickBy: pending.style === 'single' ? pending.pickBy : 'added' };
+        const body: Record<string, unknown> = { style: pending.style, pickBy: isWall(pending.style) ? wallPickBy(pending.pickBy) : pending.pickBy };
         if (body.pickBy === 'manual') {
-          if (!pending.manualItemId) return;
+          if (!pending.manualItemId) {
+            setDraftLoading(false);
+            return;
+          }
           body.manualItemId = pending.manualItemId;
           body.manualItemName = pending.manualItemName;
         }
@@ -258,6 +269,8 @@ export default function TargetsPage() {
         setDrafts((d) => ({ ...d, [id]: r.coverUrl }));
       } catch {
         // 预览失败时保留当前封面
+      } finally {
+        setDraftLoading(false);
       }
     }, 400);
     return () => clearTimeout(timer);
@@ -266,7 +279,7 @@ export default function TargetsPage() {
   const saveConfig = async (t: Target) => {
     if (!pending) return;
     const style = pending.style;
-    const pickBy = style === 'single' ? pending.pickBy : 'added'; // 海报墙样式不支持手动/随机
+    const pickBy = isWall(style) ? wallPickBy(pending.pickBy) : pending.pickBy;
     const withLock = pickBy === 'manual';
     const body: Record<string, unknown> = { template: style, pickBy, locked: withLock };
     if (pickBy === 'manual') {
@@ -286,6 +299,21 @@ export default function TargetsPage() {
       setDrafts({});
     } catch (e: any) {
       toast('err', `保存失败：${e.message}`);
+    }
+  };
+
+  // 恢复默认配置：重置样式/选图/手动选片并重新生成封面
+  const resetConfig = async (t: Target) => {
+    if (!window.confirm('恢复默认配置将重置该目标的样式与选图依据，并重新生成封面，确定？')) return;
+    try {
+      const r = await api<{ updated: number }>('/api/targets/batch', { method: 'POST', body: JSON.stringify({ ids: [t.id], action: 'reset' }) });
+      toast('info', `已恢复默认配置，正在重新生成封面（${r.updated} 项）`);
+      await load();
+      startSyncPolling();
+      setPending(null);
+      setDrafts({});
+    } catch (e: any) {
+      toast('err', e.message);
     }
   };
 
@@ -428,21 +456,30 @@ export default function TargetsPage() {
           const isSelected = selected.has(t.id);
           const pick = effPick(t);
           const style = effStyle(t);
-          const effPendingPick = pending ? (pending.style === 'single' ? pending.pickBy : 'added') : pick;
+          const effPendingPick = pending ? (isWall(pending.style) ? wallPickBy(pending.pickBy) : pending.pickBy) : pick;
           const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
           const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount ?? 0} 部影片`;
           return (
             <Card
               key={t.id}
               className={cn('cursor-pointer p-3 transition-colors hover:border-primary/50', isSelected && 'border-primary', t.missing && 'opacity-70')}
-              onClick={() => {
-                setSelected(new Set(isSelected ? [] : [t.id]));
-                setPending(null);
-                setDrafts((d) => {
-                  const n = { ...d };
-                  delete n[t.id];
-                  return n;
-                });
+              onClick={(e) => {
+                if (e.ctrlKey || e.metaKey) {
+                  setSelected((prev) => {
+                    const n = new Set(prev);
+                    if (n.has(t.id)) n.delete(t.id);
+                    else n.add(t.id);
+                    return n;
+                  });
+                } else {
+                  setSelected(new Set([t.id]));
+                  setPending(null);
+                  setDrafts((d) => {
+                    const n = { ...d };
+                    delete n[t.id];
+                    return n;
+                  });
+                }
               }}
             >
               <div className="flex items-center gap-3">
@@ -455,7 +492,7 @@ export default function TargetsPage() {
                   }}
                 >
                   {t.coverUrl ? (
-                    <img src={drafts[t.id] || `${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`} alt="" className="h-full w-full object-cover" />
+                  <img src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <ImageIcon className="h-5 w-5 text-muted-foreground/50" />
@@ -503,20 +540,53 @@ export default function TargetsPage() {
                     {t.configured ? <Badge variant="warning">手动配置</Badge> : <Badge variant="muted">默认配置</Badge>}
                     {!t.configured ? (
                       <span className="text-muted-foreground">
-                        {t.kind === 'library' ? '（样式固定单图，选图依据跟随全局）' : '（跟随合集全局配置）'}
+                        {t.kind === 'library' ? '（默认单图海报，选图依据跟随全局）' : '（选图依据跟随合集全局配置）'}
                       </span>
                     ) : null}
                   </div>
+                  {pending ? (
+                    <div className="flex gap-4">
+                      <div className="shrink-0">
+                        <div className="mb-1 text-[11px] text-muted-foreground">当前封面</div>
+                        {t.coverUrl ? (
+                          <img
+                            src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
+                            alt="当前封面"
+                            className={cn('rounded border object-cover', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}
+                          />
+                        ) : (
+                          <div className={cn('flex items-center justify-center rounded border bg-muted/40 text-xs text-muted-foreground', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}>
+                            尚未生成
+                          </div>
+                        )}
+                      </div>
+                      <div className="shrink-0">
+                        <div className="mb-1 text-[11px] text-muted-foreground">预览（新配置）</div>
+                        {drafts[t.id] ? (
+                          <img src={drafts[t.id]} alt="新配置预览" className={cn('rounded border object-cover', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')} />
+                        ) : (
+                          <div className={cn('flex items-center justify-center rounded border bg-muted/40 text-xs text-muted-foreground', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}>
+                            {draftLoading ? '生成中…' : '调整配置后自动生成'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">封面样式</span>
-                    <div className="flex gap-1.5">
+                    <div className="flex flex-wrap gap-1.5">
                       <PickBtn active={(pending?.style || style) === 'single'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), style: 'single' })}>
                         单图海报
                       </PickBtn>
                       {t.kind === 'library' ? (
-                        <PickBtn active={(pending?.style || style) === 'wall3'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), style: 'wall3' })}>
-                          海报墙
-                        </PickBtn>
+                        <>
+                          <PickBtn active={(pending?.style || style) === 'hero'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), style: 'hero' })}>
+                            大标题
+                          </PickBtn>
+                          <PickBtn active={(pending?.style || style) === 'wall-v'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), style: 'wall-v', pickBy: wallPickBy(pending?.pickBy || pick) })}>
+                            海报墙
+                          </PickBtn>
+                        </>
                       ) : null}
                     </div>
                   </div>
@@ -529,7 +599,7 @@ export default function TargetsPage() {
                       <PickBtn active={effPendingPick === 'premiere'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'premiere' })}>
                         最新发行
                       </PickBtn>
-                      {(pending?.style || style) === 'single' ? (
+                      {!isWall(pending?.style || style) ? (
                         <>
                           <PickBtn active={effPendingPick === 'random'} disabled={t.locked} onClick={() => setPending({ ...(pending || { style, pickBy: pick, manualItemId: '', manualItemName: '' }), pickBy: 'random' })}>
                             随机
@@ -547,7 +617,6 @@ export default function TargetsPage() {
                         </>
                       ) : null}
                     </div>
-                    {(pending?.style || style) !== 'single' ? <span className="text-[11px] text-muted-foreground">海报墙样式不支持手动选择</span> : null}
                   </div>
                   {pending?.pickBy === 'manual' ? (
                     <div className="text-xs text-muted-foreground">
@@ -557,11 +626,20 @@ export default function TargetsPage() {
                   ) : null}
                   {t.locked ? (
                     <div className="text-[11px] text-muted-foreground">已锁定，需先取消锁定才能修改</div>
-                  ) : changed(t) ? (
-                    <Button size="sm" onClick={() => saveConfig(t)}>
-                      保存
-                    </Button>
-                  ) : null}
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {t.configured ? (
+                        <Button size="sm" variant="outline" onClick={() => resetConfig(t)}>
+                          恢复默认配置
+                        </Button>
+                      ) : null}
+                      {changed(t) ? (
+                        <Button size="sm" onClick={() => saveConfig(t)}>
+                          保存
+                        </Button>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </Card>
@@ -569,42 +647,54 @@ export default function TargetsPage() {
         })}
       </div>
 
-      <Modal open={!!preview} onClose={() => setPreview(null)} title="封面预览">
+      <Modal open={!!preview} onClose={() => setPreview(null)} title="封面预览" className="max-w-3xl">
         {preview ? (
-          <div className="flex flex-col items-start gap-4 sm:flex-row">
-            <div className="shrink-0">
+          <div>
+            <div className="flex items-center justify-center">
               {preview.coverUrl ? (
                 <img
                   src={`${preview.coverUrl}?v=${encodeURIComponent(preview.lastGeneratedAt || Date.now())}`}
-                  alt=""
-                  className={cn('rounded-lg border', preview.kind === 'library' ? 'w-80' : 'w-52')}
+                  alt={preview.name}
+                  className="max-h-[62vh] max-w-full rounded border object-contain"
                 />
               ) : (
-                <div className="flex h-44 w-40 items-center justify-center rounded-lg border text-xs text-muted-foreground">
+                <div className="flex h-56 w-full items-center justify-center rounded border text-xs text-muted-foreground">
                   尚未生成封面
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                展示当前已生成的封面{preview.lastGeneratedAt ? `（${fmtTime(preview.lastGeneratedAt)} 生成）` : ''}，不会重复合成。
-              </p>
-              <Button size="sm" disabled={previewBusy} onClick={async () => {
-                setPreviewBusy(true);
-                try {
-                  await api(`/api/targets/${preview.id}/generate`, { method: 'POST', body: '{}' });
-                  toast('ok', '封面已更新并上传');
-                  await load();
-                  setPreview(null);
-                } catch (e: any) {
-                  toast('err', e.message);
-                } finally {
-                  setPreviewBusy(false);
-                }
-              }}>
-                {previewBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {previewBusy ? '生成中…' : '更新并上传'}
-              </Button>
+            <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                <div className="text-sm font-semibold text-foreground">{preview.name}</div>
+                <div>
+                  {preview.kind === 'library' ? '媒体库' : '合集'}
+                  {preview.itemCount != null ? ` · ${preview.itemCount} 部作品` : ''}
+                  {preview.lastGeneratedAt ? ` · 生成于 ${fmtTime(preview.lastGeneratedAt)}` : ''}
+                </div>
+                {preview.posterSource ? <div>海报来源：{preview.posterSource}</div> : null}
+                {preview.lastError ? <div className="text-red-400">最近错误：{preview.lastError}</div> : null}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button size="sm" variant="outline" onClick={() => setPreview(null)}>
+                  关闭
+                </Button>
+                <Button size="sm" disabled={previewBusy} onClick={async () => {
+                  setPreviewBusy(true);
+                  try {
+                    await api(`/api/targets/${preview.id}/generate`, { method: 'POST', body: '{}' });
+                    toast('ok', '封面已更新并上传');
+                    await load();
+                    setPreview(null);
+                  } catch (e: any) {
+                    toast('err', e.message);
+                  } finally {
+                    setPreviewBusy(false);
+                  }
+                }}>
+                  {previewBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {previewBusy ? '生成中…' : '更新并上传'}
+                </Button>
+              </div>
             </div>
           </div>
         ) : null}

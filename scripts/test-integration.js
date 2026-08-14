@@ -4,11 +4,10 @@ import path from 'node:path';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'emby-cover-test-'));
 process.env.DATA_DIR = tmp;
-process.env.PORT = '3199';
-process.env.HOST = '127.0.0.1';
 
 const { startMock } = await import('./mock-emby.js');
-const { createApp } = await import('../src/server.js');
+const { createApp } = await import('../server/app.js');
+const { createTestServer } = await import('./test-server.js');
 
 const APP = 'http://127.0.0.1:3199';
 const MOCK = 'http://127.0.0.1:8199';
@@ -42,8 +41,9 @@ async function api(method, p, body, headers = {}) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const mock = await startMock({ port: 8199 });
-const app = await createApp();
-await app.listen();
+const app = createApp();
+const appServer = createTestServer(app);
+await new Promise((resolve) => appServer.listen(3199, '127.0.0.1', resolve));
 
 console.log('== 1. 配置 Emby 连接 ==');
 let r = await api('PUT', '/api/settings', {
@@ -116,11 +116,15 @@ check('合集预览可生成', r.status === 200 && r.data.length > 3000);
 
 console.log('== 4.5 样式、尺寸与批量操作 ==');
 r = await api('GET', '/api/styles');
-check('样式清单接口（单图+海报墙）', r.status === 200 && ['single', 'wall3'].every((id) => r.data.styles.some((s) => s.id === id)) && !r.data.styles.some((s) => s.id === 'wall2') && r.data.sizes.length === 2, JSON.stringify(r.data?.styles?.map((s) => s.id)));
+check('样式清单接口（单图/大标题/海报墙）', r.status === 200 && ['single', 'hero', 'wall-v'].every((id) => r.data.styles.some((s) => s.id === id)) && !r.data.styles.some((s) => s.id === 'wall3' || s.id === 'wall5' || s.id === 'wall-h' || s.id === 'wall2') && r.data.sizes.length === 2, JSON.stringify(r.data?.styles?.map((s) => s.id)));
 r = await api('GET', '/api/demo-preview?style=single&size=thumb&backgroundMode=poster');
 check('单图+缩略图+海报背景可生成', r.status === 200 && r.data.length > 3000);
 r = await api('GET', '/api/demo-preview?style=single&size=poster&backgroundMode=gradient');
 check('单图+海报+渐变背景可生成', r.status === 200 && r.data.length > 3000);
+r = await api('GET', '/api/demo-preview?style=hero&size=thumb');
+check('大标题样式可生成', r.status === 200 && r.data.length > 3000);
+r = await api('GET', '/api/demo-preview?style=wall-v&size=thumb');
+check('海报墙样式可生成', r.status === 200 && r.data.length > 3000);
 const batchIds = ['col-1', 'col-2'];
 r = await api('POST', '/api/targets/batch', { ids: batchIds, action: 'template', value: 'single' });
 check('批量应用样式', r.status === 200 && r.data.updated === 2);
@@ -155,9 +159,24 @@ check('全局选图依据生效（加入/发行不同封面）', !bAdded.equals(
 await api('PUT', '/api/settings', { defaultPickBy: 'added' });
 await api('PUT', '/api/targets/col-2', { template: 'single' });
 
+console.log('== 4.7 无损 WebP 输出 ==');
+await api('PUT', '/api/settings', { outputFormat: 'webp' });
+r = await api('POST', '/api/targets/col-1/generate');
+check('WebP 封面生成成功', r.status === 200, JSON.stringify(r.data));
+r = await api('GET', '/api/targets');
+const col1w = r.data.targets.find((t) => t.id === 'col-1');
+check('封面文件为 webp', col1w.coverFile === 'col-1.webp', JSON.stringify(col1w.coverFile));
+const wres = await fetch(`${APP}/api/covers/col-1.webp`);
+check('WebP 封面可下载', wres.status === 200 && (wres.headers.get('content-type') || '').includes('webp'));
+await api('PUT', '/api/settings', { outputFormat: 'png' });
+
 console.log('== 5. 日志与访问令牌 ==');
 r = await api('GET', '/api/logs');
 check('日志有记录', r.status === 200 && r.data.logs.length > 0);
+r = await api('GET', '/api/metrics');
+check('运行指标接口可用', r.status === 200 && String(r.data).includes('ecs_targets_total'));
+r = await api('GET', '/api/tasks?page=1&pageSize=5');
+check('任务分页可用', r.status === 200 && typeof r.data.total === 'number' && r.data.tasks.length <= 5);
 r = await api('PUT', '/api/settings', { accessToken: 'test-token' });
 check('开启访问令牌', r.status === 200);
 r = await api('GET', '/api/status');
@@ -166,7 +185,8 @@ r = await api('GET', '/api/status', null, { 'x-access-token': 'test-token' });
 check('有令牌可访问', r.status === 200);
 await api('PUT', '/api/settings', { accessToken: '' });
 
-await app.close();
+await new Promise((resolve) => appServer.close(resolve));
+app.close();
 await mock.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 

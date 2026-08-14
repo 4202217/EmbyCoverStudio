@@ -281,29 +281,14 @@ export class EmbyClient {
     }
   }
 
-  // 获取封面原始文件（不加任何缩放/质量参数），用于对比 Emby 当前封面是否与本工具上次生成的一致
-  async getOriginalImage(itemId) {
+  async uploadImage(itemId, imgBuffer, { contentType = 'image/png' } = {}) {
     const p = `/Items/${itemId}/Images/Primary`;
-    try {
-      return await this._buffer(p);
-    } catch (e) {
-      if (e.status !== 401 && e.status !== 404) throw e;
-      const uid = await this._ensureUser();
-      if (uid) {
-        return await this._buffer(`/Users/${uid}/Items/${itemId}/Images/Primary`);
-      }
-      throw e;
-    }
-  }
-
-  async uploadImage(itemId, pngBuffer) {
-    const p = `/Items/${itemId}/Images/Primary`;
-    const b64 = pngBuffer.toString('base64');
+    const b64 = imgBuffer.toString('base64');
     try {
       const res = await this._fetch(p, {
         method: 'POST',
         body: b64,
-        headers: { 'Content-Type': 'image/png' }
+        headers: { 'Content-Type': contentType }
       });
       return res.status;
     } catch (e) {
@@ -311,8 +296,8 @@ export class EmbyClient {
         // 部分版本（如 Jellyfin）接受原始字节
         const res = await this._fetch(p, {
           method: 'POST',
-          body: pngBuffer,
-          headers: { 'Content-Type': 'image/png' }
+          body: imgBuffer,
+          headers: { 'Content-Type': contentType }
         });
         return res.status;
       }

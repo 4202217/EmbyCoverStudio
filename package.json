@@ -10,6 +10,8 @@
     "start": "next start",
     "mock": "node scripts/mock-emby.js",
     "test": "node scripts/test-integration.js",
+    "test:unit": "node --test test/unit.test.js",
+    "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -30,6 +32,8 @@
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "tailwindcss-animate": "^1.0.7",

@@ -1,10 +1,11 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import sharp from 'sharp';
 import { EmbyClient } from '../emby/client.js';
 import { generateCover } from '../covers/generator.js';
 import { resolveFont } from '../covers/fonts.js';
-import { resolveSize, isValidStyle, SIZE_PRESETS } from '../covers/styles.js';
+import { resolveSize, isValidStyle, configStyle, isValidPickBy, pickDefault, wallLayout, SIZE_PRESETS } from '../covers/styles.js';
 import { COVERS_DIR, CACHE_DIR } from '../config.js';
 import { info, warn, error } from '../logger.js';
 
@@ -28,12 +29,9 @@ function taskRecord({ name, type, trigger, status, updated = 0, unchanged = 0, f
 }
 
 function effectivePickBy(target, settings) {
-  if (target?.pickBy === 'manual') return 'manual';
-  if (target?.pickBy === 'random') return 'random';
-  if (target?.pickBy === 'premiere') return 'premiere';
-  if (target?.pickBy === 'added') return 'added';
-  const def = settings.defaultPickByByStyle?.[`${target.kind}-${effectiveStyleOf(target)}`] || 'added';
-  return ['premiere', 'random'].includes(def) ? def : 'added';
+  if (target?.pickBy && isValidPickBy(target.pickBy)) return target.pickBy;
+  const def = settings.defaultPickByByStyle?.[`${target.kind}-${configStyle(effectiveStyleOf(target))}`] || 'added';
+  return pickDefault(def);
 }
 
 function effectiveStyleOf(target) {
@@ -43,14 +41,25 @@ function effectiveStyleOf(target) {
 }
 
 function posterNeed(style) {
-  if (style === 'wall3') return 9;
+  if (style === 'wall-v') return 8; // 竖向瀑布流 3×3
   return 1;
 }
 
-async function embyCoverFingerprint(client, itemId) {
+function isWallStyle(s) {
+  return s === 'wall-v';
+}
+
+// 墙类海报不足时回退：0 张 → 大标题（渐变背景），1 张 → 单图
+function wallFallback(style, count) {
+  if (isWallStyle(style) && count < 2) return count === 0 ? 'hero' : 'single';
+  return style;
+}
+
+// 用 Emby 的 Primary 图片 tag 作为轻量指纹，避免每次同步都全量下载原图
+async function embyCoverTag(client, itemId) {
   try {
-    const buf = await client.getOriginalImage(itemId);
-    return buf && buf.length ? sha1(buf) : '';
+    const info = await client.getItemInfo(itemId, 'ImageTags,PrimaryImageTag');
+    return String(info?.ImageTags?.Primary || info?.PrimaryImageTag || '');
   } catch {
     return '';
   }
@@ -69,6 +78,27 @@ async function mapLimit(items, limit, fn, shouldStop) {
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
   return results;
+}
+
+// 海报缓存 LRU 清理：超出文件数上限时按修改时间删除最旧的文件（不阻断主流程）
+async function pruneCache(maxFiles = 3000) {
+  try {
+    const files = await fs.readdir(CACHE_DIR);
+    if (files.length <= maxFiles) return;
+    const list = [];
+    for (const f of files) {
+      const p = path.join(CACHE_DIR, f);
+      const st = await fs.stat(p).catch(() => null);
+      if (st) list.push({ p, mtime: st.mtimeMs });
+    }
+    if (list.length <= maxFiles) return;
+    list.sort((a, b) => a.mtime - b.mtime);
+    for (const it of list.slice(0, list.length - maxFiles)) {
+      fs.unlink(it.p).catch(() => {});
+    }
+  } catch {
+    // 忽略缓存清理失败
+  }
 }
 
 export function createSyncService(store) {
@@ -121,29 +151,33 @@ export function createSyncService(store) {
     return [...items].sort((a, b) => (b.dateCreated || '').localeCompare(a.dateCreated || ''));
   }
 
-  async function collectPosters(target, client, settings, { pickBy = 'added', manualItemId = '', need = 1 } = {}) {
+  async function collectPosters(target, client, settings, { pickBy = 'added', manualItemId = '', need = 1, excludeIds = [] } = {}) {
     // 元数据拉取上限提高，保证副标题数量统计完整（仅下载需要的海报图）
     const raw = await client.getCoverItems(target, 500);
     // 总数始终按整个媒体库/合集的带封面条目统计，手动选择只影响选哪张海报
-    const withPrimaryAll = raw.filter((i) => i.hasPrimary);
+    const allWithPrimary = raw.filter((i) => i.hasPrimary);
+    const total = allWithPrimary.length;
+    // 可选：排除其它目标已选用的海报，剩余不足时回退为不排除
+    const exclude = new Set((excludeIds || []).map(String));
+    let pool = allWithPrimary.filter((i) => !exclude.has(String(i.id)));
+    if (pool.length < Math.max(1, need)) pool = allWithPrimary;
     let sorted;
     if (pickBy === 'manual' && manualItemId) {
-      const manual = withPrimaryAll.find((i) => i.id === String(manualItemId));
+      const manual = pool.find((i) => i.id === String(manualItemId));
       // 手动选择的影片已不存在或无封面时，回退为最新入库
-      sorted = manual ? [manual] : sortByPick(withPrimaryAll, 'added');
+      sorted = manual ? [manual] : sortByPick(pool, 'added');
     } else if (pickBy === 'random') {
-      sorted = withPrimaryAll.length ? [withPrimaryAll[Math.floor(Math.random() * withPrimaryAll.length)]] : [];
+      sorted = pool.length ? [pool[Math.floor(Math.random() * pool.length)]] : [];
     } else {
-      sorted = sortByPick(raw, pickBy);
+      sorted = sortByPick(pool, pickBy);
     }
     const posterW = Math.max(240, Math.round(settings.width * 0.4));
-    const withPrimary = sorted.filter((i) => i.hasPrimary);
-    const candidates = withPrimary.slice(0, Math.max(1, need));
+    const candidates = sorted.slice(0, Math.max(1, need));
     const withPosters = await mapLimit(candidates, 4, async (item) => {
       const poster = await cachedPoster(client, item.id, posterW, item.imageTag);
       return poster ? { ...item, poster } : null;
     }, shouldStop);
-    return { posters: withPosters.filter(Boolean), total: withPrimaryAll.length, chosen: withPrimary[0] || null };
+    return { posters: withPosters.filter(Boolean), total, chosen: sorted[0] || null };
   }
 
   async function buildCover(target, posters, genSettings, style, totalCount = posters.length) {
@@ -165,25 +199,45 @@ export function createSyncService(store) {
 
   async function syncTarget(target, client, { force = false, trigger = '' } = {}) {
     const settings = store.settings;
-    const size = resolveSize(target, settings);
+    const size = resolveSize(target);
     // 合集仅支持单图海报；媒体库支持单图/海报墙（未单独设置时固定单图）
-    const style = target.kind === 'collection'
+    let style = target.kind === 'collection'
       ? 'single'
       : (isValidStyle(target.template) ? target.template : 'single');
     const pickBy = effectivePickBy(target, settings);
-    const genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${style}`] || {}), width: size.width, height: size.height };
-    const settingsHash = sha1(JSON.stringify({ cover: genSettings, template: style, defaultPickBy: pickBy }));
-    const { posters, total } = await collectPosters(target, client, genSettings, { pickBy, manualItemId: target.manualItemId, need: posterNeed(style) });
+    const excludeIds = store.settings.excludeUsedPosters
+      ? store.listTargets()
+          .filter((t) => t.id !== target.id && (t.chosenItemId || t.manualItemId))
+          .map((t) => t.chosenItemId || t.manualItemId)
+      : [];
+    // 先按目标样式收集海报（墙类需要多张）
+    const probe = { ...(settings.coverByStyle?.[`${target.kind}-${configStyle(style)}`] || {}), width: size.width, height: size.height };
+    const { posters, total } = await collectPosters(target, client, probe, { pickBy, manualItemId: target.manualItemId, need: posterNeed(style), excludeIds });
+    // 墙类海报不足时回退：0 张 → 大标题（渐变背景），1 张 → 单图
+    style = wallFallback(style, posters.length);
+    const genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${configStyle(style)}`] || {}), width: size.width, height: size.height };
+    const wallLayoutParams = isWallStyle(style) ? wallLayout(style, posters.length) : null;
+    // 墙类排版参数与海报数量纳入指纹：布局调整或海报数变化后墙类封面会自动重新生成
+    const settingsHash = sha1(JSON.stringify({
+      cover: genSettings,
+      template: style,
+      defaultPickBy: pickBy,
+      outputFormat: store.settings.outputFormat,
+      ...(wallLayoutParams ? { layout: wallLayoutParams } : {})
+    }));
     const hash = sha1(posters.map((p) => `${p.id}:${p.imageTag}`).join('|'));
-    const localFile = path.join(COVERS_DIR, `${target.id}.png`);
+    const useWebp = store.settings.outputFormat === 'webp';
+    const ext = useWebp ? 'webp' : 'png';
+    const localFile = path.join(COVERS_DIR, `${target.id}.${ext}`);
     let png = null;
     const unchanged = hash === target.itemHash && settingsHash === target.coverSettingsHash;
     // 检测 Emby 中封面是否被外部修改过（如另一实例生成、手动替换），以 Emby 实际封面为准
-    const embyHash = await embyCoverFingerprint(client, target.id);
+    const embyTag = await embyCoverTag(client, target.id);
     const coverChangedExternally = Boolean(
-      embyHash &&
+      embyTag &&
       target.coverFile &&
-      (target.embyCoverHash ? embyHash !== target.embyCoverHash : (target.coverHash ? embyHash !== target.coverHash : false))
+      target.embyCoverTag &&
+      embyTag !== target.embyCoverTag
     );
     if (!force && unchanged && target.coverFile && !target.needsRegen && !target.needsUpload && !coverChangedExternally) {
       const patch = {};
@@ -193,7 +247,7 @@ export function createSyncService(store) {
       }
       const src = posters[0]?.name || '';
       if (target.posterSource !== src) patch.posterSource = src;
-      if (embyHash && target.embyCoverHash !== embyHash) patch.embyCoverHash = embyHash;
+      if (embyTag && target.embyCoverTag !== embyTag) patch.embyCoverTag = embyTag;
       if (Object.keys(patch).length) store.updateTarget(target.id, patch);
       return { changed: false };
     }
@@ -202,32 +256,36 @@ export function createSyncService(store) {
     if (!png) {
       if (!posters.length) throw new Error('未找到任何带封面的影片');
       png = await buildCover(target, posters, genSettings, style, total);
+      if (useWebp) png = await sharp(png).webp({ lossless: true, quality: 100 }).toBuffer();
     }
     await fs.writeFile(localFile, png);
+    // 清理切换格式时遗留的旧扩展名文件与草稿
     fs.unlink(path.join(COVERS_DIR, `${target.id}.draft.png`)).catch(() => {});
+    fs.unlink(path.join(COVERS_DIR, `${target.id}.${useWebp ? 'png' : 'webp'}`)).catch(() => {});
     const now = new Date().toISOString();
     // 强制重算但内容/设置/外部封面均无变化时，保留原生成时间，避免全量同步刷掉「最近生成」
     const noRealChange = unchanged && target.coverFile && !coverChangedExternally;
     const basePatch = {
       itemHash: hash,
       coverSettingsHash: settingsHash,
-      coverFile: `${target.id}.png`,
+      coverFile: `${target.id}.${ext}`,
       coverHash: sha1(png),
-      embyCoverHash: embyHash,
+      embyCoverTag: embyTag,
       itemCount: total,
       posterCount: posters.length,
       posterSource: posters[0]?.name || '',
+      chosenItemId: posters[0]?.id || '',
       lastGeneratedAt: noRealChange ? target.lastGeneratedAt : now,
       lastTrigger: noRealChange ? target.lastTrigger || '' : trigger || target.lastTrigger || '',
       needsRegen: false,
       missing: false
     };
     try {
-      await client.uploadImage(target.id, png);
-      const newEmbyHash = await embyCoverFingerprint(client, target.id);
+      await client.uploadImage(target.id, png, { contentType: useWebp ? 'image/webp' : 'image/png' });
+      const newEmbyTag = await embyCoverTag(client, target.id);
       store.updateTarget(target.id, {
         ...basePatch,
-        embyCoverHash: newEmbyHash || embyHash,
+        embyCoverTag: newEmbyTag || embyTag,
         lastError: '',
         needsUpload: false
       });
@@ -291,7 +349,7 @@ export function createSyncService(store) {
       if (onlyIds) targets = targets.filter((t) => onlyIds.includes(t.id) && !t.locked);
       else targets = targets.filter((t) => !t.locked);
       if (onlyKind) targets = targets.filter((t) => t.kind === onlyKind);
-      if (onlyStyle) targets = targets.filter((t) => effectiveStyleOf(t) === onlyStyle);
+      if (onlyStyle) targets = targets.filter((t) => configStyle(effectiveStyleOf(t)) === onlyStyle);
       if (!resume) state.queueTotal = targets.length;
       let updated = 0;
       let unchanged = 0;
@@ -330,7 +388,7 @@ export function createSyncService(store) {
       const trig = triggerOf(reason);
       const precise = Boolean(onlyIds) && trig === 'webhook';
       const kindLabel = onlyKind === 'library' ? '媒体库' : onlyKind === 'collection' ? '合集' : '';
-      const styleLabel = onlyStyle === 'wall3' ? '海报墙' : onlyStyle === 'single' ? '单图海报' : '';
+      const styleLabel = onlyStyle === 'wall' ? '海报墙' : onlyStyle === 'single' ? '单图海报' : '';
       store.addTask(taskRecord({
         name: onlyStyle ? `按配置重新生成（${kindLabel}·${styleLabel} · ${targets.length} 项）` : (onlyKind ? `按类型重新生成（${kindLabel} · ${targets.length} 项）` : (onlyIds ? (precise ? `精准更新（${targets.length} 项）` : `批量更新（${targets.length} 项）`) : `全量同步（${targets.length} 项）`)),
         type: onlyStyle ? 'sync' : (onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync')),
@@ -341,6 +399,7 @@ export function createSyncService(store) {
         failed
       }));
       info(`同步${state.status === 'cancelled' ? '已取消' : state.status === 'paused' ? '已暂停' : '完成'}：更新 ${updated} 个，无变化 ${unchanged} 个，失败 ${failed} 个`);
+      pruneCache().catch(() => {});
       return { ok: true, updated, unchanged, failed, status: state.status };
     } catch (e) {
       state.lastError = e.message;
@@ -348,7 +407,7 @@ export function createSyncService(store) {
       const trig = triggerOf(reason);
       const precise = Boolean(onlyIds) && trig === 'webhook';
       const kindLabel = onlyKind === 'library' ? '媒体库' : onlyKind === 'collection' ? '合集' : '';
-      const styleLabel = onlyStyle === 'wall3' ? '海报墙' : onlyStyle === 'single' ? '单图海报' : '';
+      const styleLabel = onlyStyle === 'wall' ? '海报墙' : onlyStyle === 'single' ? '单图海报' : '';
       store.addTask(taskRecord({
         name: onlyStyle ? `按配置重新生成（${kindLabel}·${styleLabel}）` : (onlyKind ? `按类型重新生成（${kindLabel}）` : (onlyIds ? (precise ? `精准更新（${onlyIds.length} 项）` : `批量更新（${onlyIds.length} 项）`) : '全量同步')),
         type: onlyStyle ? 'sync' : (onlyKind ? 'sync' : (precise ? 'precise' : onlyIds ? 'batch' : 'sync')),
@@ -451,17 +510,25 @@ export function createSyncService(store) {
     const settings = store.settings;
     const size = overrides.size && SIZE_PRESETS[overrides.size]
       ? SIZE_PRESETS[overrides.size]
-      : (overrides.width && overrides.height ? { width: overrides.width, height: overrides.height } : resolveSize(target, settings));
-    const style = target.kind === 'collection'
+      : (overrides.width && overrides.height ? { width: overrides.width, height: overrides.height } : resolveSize(target));
+    let style = target.kind === 'collection'
       ? 'single'
       : (isValidStyle(overrides.style) ? overrides.style : (isValidStyle(target.template) ? target.template : 'single'));
+    const requestedStyle = style;
     const pickBy = effectivePickBy(target, store.settings);
-    const genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${style}`] || {}), width: size.width, height: size.height };
+    let genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${configStyle(style)}`] || {}), width: size.width, height: size.height };
     if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {
       genSettings.backgroundMode = overrides.backgroundMode;
     }
     const { posters, total } = await collectPosters(target, client, genSettings, { pickBy, manualItemId: target.manualItemId, need: posterNeed(style) });
-    if (!posters.length) throw new Error('未找到任何带封面的影片');
+    style = wallFallback(style, posters.length);
+    if (style !== 'hero' && !posters.length) throw new Error('未找到任何带封面的影片');
+    if (style !== requestedStyle) {
+      genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${configStyle(style)}`] || {}), width: size.width, height: size.height };
+      if (overrides.backgroundMode === 'poster' || overrides.backgroundMode === 'gradient') {
+        genSettings.backgroundMode = overrides.backgroundMode;
+      }
+    }
     return buildCover(target, posters, genSettings, style, total);
   }
 
@@ -471,14 +538,20 @@ export function createSyncService(store) {
     if (!target) throw new Error('目标不存在');
     const client = await getClient();
     if (!client.configured) throw new Error('未配置 Emby 服务器地址或 API 密钥');
-    const size = resolveSize(target, store.settings);
-    const genSettings = { ...cover, width: size.width, height: size.height };
+    const settings = store.settings;
+    const size = resolveSize(target);
+    const requestedStyle = style;
+    let genSettings = { ...cover, width: size.width, height: size.height };
     const { posters, total } = await collectPosters(target, client, genSettings, {
-      pickBy: ['premiere', 'manual', 'random'].includes(pickBy) ? pickBy : 'added',
+      pickBy: isValidPickBy(pickBy) ? pickBy : 'added',
       manualItemId: manualItemId || target.manualItemId,
       need: posterNeed(style)
     });
-    if (!posters.length) throw new Error('未找到任何带封面的影片');
+    style = wallFallback(style, posters.length);
+    if (style !== 'hero' && !posters.length) throw new Error('未找到任何带封面的影片');
+    if (style !== requestedStyle) {
+      genSettings = { ...(settings.coverByStyle?.[`${target.kind}-${configStyle(style)}`] || {}), width: size.width, height: size.height };
+    }
     return buildCover(target, posters, genSettings, style, total);
   }
 

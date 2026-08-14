@@ -18,9 +18,9 @@ export function Modal({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4" onClick={onClose}>
       <div
-        className={cn('max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg border bg-card p-5 shadow-xl', className)}
+        className={cn('my-auto max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg border bg-card p-5 shadow-xl', className)}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">

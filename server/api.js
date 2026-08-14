@@ -7,8 +7,8 @@ import { EmbyClient } from '../src/emby/client.js';
 import { generateCover } from '../src/covers/generator.js';
 import { placeholderPoster } from '../src/covers/placeholders.js';
 import { fontStatus } from '../src/covers/fonts.js';
-import { STYLES, SIZE_PRESETS, DEFAULT_SIZE_BY_KIND, isValidStyle } from '../src/covers/styles.js';
-import { parseCron, nextRunDate } from '../src/scheduler.js';
+import { STYLES, SIZE_PRESETS, DEFAULT_SIZE_BY_KIND, isValidStyle, configStyle, isValidPickBy } from '../src/covers/styles.js';
+import { setupCron, getNextRun } from './cron.js';
 import { buildBackupData, buildWebdavBackupData, webdavPut, webdavGet } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,36 +29,10 @@ function okBuffer(buf, contentType) {
 export function createApi(app) {
   const { store, syncService, webhookService } = app;
   let embyStatusCache = { at: 0, value: null };
-  let nextRunCache = { at: 0, expr: '', value: null };
 
   function webhookUrl(baseUrl) {
     const token = store.settings.webhookToken;
     return `${baseUrl}/api/webhook/emby${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-  }
-
-  function getNextRun() {
-    const expr = store.settings.cron || '0 */6 * * *';
-    const now = Date.now();
-    if (nextRunCache.expr === expr && now - nextRunCache.at < 60000) return nextRunCache.value;
-    try {
-      const d = nextRunDate(parseCron(expr));
-      nextRunCache = { at: now, expr, value: d ? d.toISOString() : null };
-    } catch {
-      nextRunCache = { at: now, expr, value: null };
-    }
-    return nextRunCache.value;
-  }
-
-  function setupCron() {
-    const expr = store.settings.cron || '0 */6 * * *';
-    try {
-      parseCron(expr);
-      app.scheduler.remove('cover-sync');
-      app.scheduler.add('cover-sync', expr, () => syncService.runSync({ reason: '定时任务' }));
-      info(`定时任务已设置：${expr}`);
-    } catch {
-      info(`cron 表达式无效：${expr}`);
-    }
   }
 
   let updateCheckCache = { at: 0, value: null };
@@ -207,7 +181,7 @@ export function createApi(app) {
         },
         cron: store.settings.cron,
         cronValid: true,
-        nextRun: getNextRun(),
+        nextRun: getNextRun(store),
         webhookPending: webhookService.pending,
         webhook: {
           url: webhookUrl(baseUrl),
@@ -235,7 +209,7 @@ export function createApi(app) {
       if (m === 'GET') return okJson({ ok: true, settings: store.settings });
       if (m === 'PUT') {
         store.updateSettings(body || {});
-        setupCron();
+        setupCron(app);
         embyStatusCache = { at: 0, value: null };
         return okJson({ ok: true, settings: store.settings });
       }
@@ -250,8 +224,7 @@ export function createApi(app) {
         defaults: DEFAULT_SIZE_BY_KIND,
         defaultPickBy: store.settings.defaultPickByByStyle?.['library-single'] || 'added',
         defaultPickByByStyle: store.settings.defaultPickByByStyle,
-        coverByStyle: store.settings.coverByStyle,
-        styleByKind: store.settings.styleByKind
+        coverByStyle: store.settings.coverByStyle
       });
     }
 
@@ -281,7 +254,7 @@ export function createApi(app) {
         return errJson('备份文件格式不正确或版本不匹配');
       }
       store.replaceAll(data.settings, data.targets, data.tasks || []);
-      setupCron();
+      setupCron(app);
       embyStatusCache = { at: 0, value: null };
       info('已导入配置与数据备份');
       return okJson({ ok: true, importedTargets: store.listTargets().length });
@@ -338,7 +311,7 @@ export function createApi(app) {
           store.updateTarget(id, { template: t.kind === 'collection' ? 'single' : style });
         }
       } else if (action === 'pickBy') {
-        const pick = body?.value === 'premiere' ? 'premiere' : 'added';
+        const pick = isValidPickBy(body?.value) && body?.value !== 'manual' ? body.value : 'added';
         for (const id of unlocked) store.updateTarget(id, { pickBy: pick });
       } else if (action === 'reset') {
         for (const id of unlocked) {
@@ -353,12 +326,17 @@ export function createApi(app) {
       return okJson({ ok: true, updated: unlocked.length, skipped: ids.length - unlocked.length });
     }
 
-    // GET /api/tasks
+    // GET /api/tasks（可选 ?page=1&pageSize=50 分页）
     if (m === 'GET' && p === '/tasks') {
-      return okJson({
-        ok: true,
-        tasks: store.listTasks().map((t) => ({ ...t, acknowledged: store.isAcknowledgedTask(t.seq) }))
-      });
+      const page = Math.max(1, Number(query.get('page')) || 0);
+      const pageSize = Math.min(200, Math.max(1, Number(query.get('pageSize')) || 0));
+      const all = store.listTasks().map((t) => ({ ...t, acknowledged: store.isAcknowledgedTask(t.seq) }));
+      if (page && pageSize) {
+        const total = all.length;
+        const start = (page - 1) * pageSize;
+        return okJson({ ok: true, tasks: all.slice(start, start + pageSize), total, page, pageSize });
+      }
+      return okJson({ ok: true, tasks: all });
     }
 
     // GET /api/logs
@@ -415,7 +393,7 @@ export function createApi(app) {
     // POST /api/sync
     if (m === 'POST' && p === '/sync') {
       const onlyKind = body?.onlyKind === 'library' || body?.onlyKind === 'collection' ? body.onlyKind : null;
-      const onlyStyle = body?.onlyStyle === 'single' || body?.onlyStyle === 'wall3' ? body.onlyStyle : null;
+      const onlyStyle = body?.onlyStyle === 'single' || body?.onlyStyle === 'wall' ? body.onlyStyle : null;
       const result = await syncService.runSync({ force: Boolean(body?.force), reason: '手动同步', onlyKind, onlyStyle });
       return result.ok ? okJson(result) : errJson(result.error || '同步失败', 400);
     }
@@ -430,10 +408,10 @@ export function createApi(app) {
     // GET /api/covers/:file
     if (m === 'GET' && segments[0] === 'covers' && segments.length === 2) {
       const file = segments[1];
-      if (!/^[A-Za-z0-9._-]+\.png$/.test(file)) return errJson('非法文件名');
+      if (!/^[A-Za-z0-9._-]+\.(png|webp)$/.test(file)) return errJson('非法文件名');
       const fp = path.join(COVERS_DIR, file);
       if (!fs.existsSync(fp)) return errJson('封面不存在', 404);
-      return okBuffer(fs.readFileSync(fp), 'image/png');
+      return okBuffer(fs.readFileSync(fp), file.endsWith('.webp') ? 'image/webp' : 'image/png');
     }
 
     // GET /api/item-image/:id
@@ -468,7 +446,10 @@ export function createApi(app) {
     // GET /api/demo-preview
     if (m === 'GET' && p === '/demo-preview') {
       try {
-        const settings = JSON.parse(JSON.stringify(store.settings.coverByStyle?.['library-single'] || {}));
+        const style = STYLES.some((s) => s.id === query.get('style')) ? query.get('style') : 'single';
+        // 按样式取对应配置（海报墙用 wall 配置，合集用 collection 配置），避免预览用错配置
+        const cfgKey = query.get('size') === 'poster' ? 'collection-single' : `library-${configStyle(style)}`;
+        const settings = JSON.parse(JSON.stringify(store.settings.coverByStyle?.[cfgKey] || store.settings.coverByStyle?.['library-single'] || {}));
         const numKeys = ['width', 'height', 'titleSize', 'subtitleSize', 'radius', 'cellBorder'];
         const strKeys = ['titleColor', 'subtitleColor', 'bgTop', 'bgBottom', 'backgroundMode', 'accent', 'fontFamily', 'fontFile'];
         for (const k of numKeys) {
@@ -483,13 +464,12 @@ export function createApi(app) {
           settings.width = SIZE_PRESETS[query.get('size')].width;
           settings.height = SIZE_PRESETS[query.get('size')].height;
         }
-        const style = STYLES.some((s) => s.id === query.get('style')) ? query.get('style') : 'single';
         const targetId = String(query.get('targetId') || '');
         if (targetId) {
           const png = await syncService.previewWithSettings(targetId, {
             style,
             cover: settings,
-            pickBy: query.get('pickBy') === 'premiere' ? 'premiere' : query.get('pickBy') === 'manual' ? 'manual' : query.get('pickBy') === 'random' ? 'random' : 'added',
+            pickBy: isValidPickBy(query.get('pickBy')) ? query.get('pickBy') : 'added',
             manualItemId: query.get('manualItemId') || ''
           });
           return okBuffer(png, 'image/png');
@@ -501,7 +481,7 @@ export function createApi(app) {
         }
         const png = await generateCover({
           title: query.get('title') || '我的电影合集',
-          subtitle: settings.showCount ? `共 ${count} 部作品` : '',
+          subtitle: query.get('subtitle') ?? (settings.showCount ? `共 ${count} 部作品` : ''),
           posters,
           settings,
           style
@@ -528,12 +508,12 @@ export function createApi(app) {
     if (m === 'POST' && segments[0] === 'targets' && segments.length === 3 && segments[2] === 'preview-draft') {
       const target = store.getTarget(segments[1]);
       if (!target) return errJson('目标不存在', 404);
-      const style = body?.style === 'wall3' && target.kind === 'library' ? 'wall3' : 'single';
-      const pickBy = ['manual', 'premiere', 'random', 'added'].includes(body?.pickBy) ? body.pickBy : 'added';
+      const style = target.kind === 'library' && isValidStyle(body?.style) ? body.style : 'single';
+      const pickBy = isValidPickBy(body?.pickBy) ? body.pickBy : 'added';
       const manualItemId = String(body?.manualItemId || '').trim();
       if (pickBy === 'manual' && !manualItemId) return errJson('请先选择封面影片');
       try {
-        const cover = store.settings.coverByStyle?.[`${target.kind}-${style}`] || {};
+        const cover = store.settings.coverByStyle?.[`${target.kind}-${configStyle(style)}`] || {};
         const png = await syncService.previewWithSettings(target.id, { style, cover, pickBy, manualItemId });
         fs.writeFileSync(path.join(COVERS_DIR, `${target.id}.draft.png`), png);
         return okJson({ ok: true, coverUrl: `/api/covers/${encodeURIComponent(target.id)}.draft.png?t=${Date.now()}` });
@@ -562,7 +542,7 @@ export function createApi(app) {
       if ('titleOverride' in body) patch.titleOverride = String(body.titleOverride || '').trim();
       if ('pickBy' in body) {
         const v = String(body.pickBy || '');
-        patch.pickBy = ['added', 'premiere', 'manual', 'random'].includes(v) ? v : 'added';
+        patch.pickBy = isValidPickBy(v) ? v : 'added';
         patch.configured = true;
         if (patch.pickBy !== 'manual') {
           patch.manualItemId = '';
@@ -620,13 +600,42 @@ export function createApi(app) {
           targets: mask.targets ? (data.targets || []) : null,
           tasks: mask.tasks ? (data.tasks || []) : null
         });
-        setupCron();
+        setupCron(app);
         embyStatusCache = { at: 0, value: null };
         info('已从 WebDAV 恢复备份');
         return okJson({ ok: true, importedTargets: store.listTargets().length });
       } catch (e) {
         return errJson(e.message);
       }
+    }
+
+    // GET /api/metrics（Prometheus 文本格式的运行指标）
+    if (m === 'GET' && p === '/metrics') {
+      const targets = store.listTargets();
+      const tasks = store.data.tasks || [];
+      const s = syncService.state;
+      const uptime = Math.max(0, Math.round((Date.now() - (app.startedAt || Date.now())) / 1000));
+      const generated = tasks.reduce((sum, t) => sum + (t.updated || 0), 0);
+      const text = [
+        '# HELP ecs_uptime_seconds 服务运行时长（秒）',
+        '# TYPE ecs_uptime_seconds gauge',
+        `ecs_uptime_seconds ${uptime}`,
+        '# TYPE ecs_targets_total gauge',
+        `ecs_targets_total ${targets.length}`,
+        '# TYPE ecs_targets_enabled gauge',
+        `ecs_targets_enabled ${targets.filter((t) => !t.locked).length}`,
+        '# TYPE ecs_covers_generated gauge',
+        `ecs_covers_generated ${targets.filter((t) => t.coverFile).length}`,
+        '# TYPE ecs_targets_failed gauge',
+        `ecs_targets_failed ${targets.filter((t) => t.lastError).length}`,
+        '# TYPE ecs_tasks_total gauge',
+        `ecs_tasks_total ${tasks.length}`,
+        '# TYPE ecs_sync_running gauge',
+        `ecs_sync_running ${s.running ? 1 : 0}`,
+        '# TYPE ecs_covers_generated_total counter',
+        `ecs_covers_generated_total ${generated}`
+      ].join('\n') + '\n';
+      return okBuffer(Buffer.from(text), 'text/plain; version=0.0.4');
     }
 
     return errJson('接口不存在', 404);

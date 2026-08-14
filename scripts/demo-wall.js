@@ -25,15 +25,15 @@ if (posters.length < 6) {
   process.exit(1);
 }
 const size = SIZE_PRESETS.thumb; // 1600×900
-const settings = { ...store.settings.cover, width: size.width, height: size.height };
+const settings = { ...(store.settings.coverByStyle?.['library-wall'] || {}), width: size.width, height: size.height };
 const font = resolveFont(settings);
 const png = await generateCover({
   title: target.name,
   subtitle: `共 ${items.length} 部作品`,
-  posters: posters.slice(0, 9),
+  posters: posters.slice(0, 8),
   settings,
-  style: 'wall3',
+  style: 'wall-v',
   font
 });
-fs.writeFileSync('/tmp/emby-wall3.png', png);
-console.log('已生成 /tmp/emby-wall3.png');
+fs.writeFileSync('/tmp/emby-wall-v.png', png);
+console.log('已生成 /tmp/emby-wall-v.png');
