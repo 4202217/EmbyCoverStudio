@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { ConfirmDialog, type ConfirmState } from '@/components/confirm-dialog';
 import { api, rawFetch } from '@/lib/api';
 import { toast } from '@/components/toast-provider';
 import { cn, fmtTime } from '@/lib/utils';
@@ -39,6 +40,7 @@ export default function SettingsPage() {
   const [targets, setTargets] = useState<{ id: string; name: string; kind: string; missing?: boolean }[]>([]);
   const [previewSrc, setPreviewSrc] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const webhookTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(
@@ -160,10 +162,16 @@ export default function SettingsPage() {
       try {
         const data = JSON.parse(String(reader.result));
         if (!data || data.version !== 1 || !data.settings || !data.targets) throw new Error('备份文件格式不正确或版本不匹配');
-        if (!window.confirm('导入将覆盖当前全部配置与数据，确定继续吗？')) return;
-        await api('/api/import', { method: 'POST', body: JSON.stringify({ data }) });
-        toast('ok', '导入成功，正在刷新…');
-        load();
+        setConfirm({
+          title: '导入备份',
+          description: '导入将覆盖当前全部配置与数据，确定继续吗？',
+          confirmText: '覆盖并导入',
+          onConfirm: async () => {
+            await api('/api/import', { method: 'POST', body: JSON.stringify({ data }) });
+            toast('ok', '导入成功，正在刷新…');
+            load();
+          }
+        });
       } catch (e: any) {
         toast('err', `导入失败：${e.message}`);
       }
@@ -353,7 +361,10 @@ export default function SettingsPage() {
                 {['added', 'premiere', 'random'].map((p) => (
                   <button
                     key={p}
-                    className={cn('rounded-md border px-2.5 py-1 text-xs hover:border-primary', curPick === p ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-xs transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.97]',
+                      curPick === p ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'
+                    )}
                     onClick={() => setDraft({ ...draft, defaultPickByByStyle: { ...(draft.defaultPickByByStyle || {}), [group]: p } })}
                   >
                     {p === 'added' ? '最新入库' : p === 'premiere' ? '最新发行' : '随机'}
@@ -367,7 +378,10 @@ export default function SettingsPage() {
                 {['gradient', 'poster'].map((b) => (
                   <button
                     key={b}
-                    className={cn('rounded-md border px-2.5 py-1 text-xs hover:border-primary', (cur.backgroundMode || 'gradient') === b ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-xs transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.97]',
+                      (cur.backgroundMode || 'gradient') === b ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'
+                    )}
                     onClick={() => setGroupDraft({ backgroundMode: b })}
                   >
                     {b === 'gradient' ? '渐变色' : '海报渐变模糊'}
@@ -475,7 +489,7 @@ export default function SettingsPage() {
                     key={previewSrc}
                     src={previewSrc}
                     alt="封面预览"
-                    className="h-auto max-h-full w-auto max-w-full animate-in fade-in rounded-lg border object-contain duration-200"
+                    className="h-auto max-h-full w-auto max-w-full animate-in fade-in rounded-lg border object-contain duration-200 motion-reduce:animate-none"
                   />
                 ) : null}
                 {loading ? (
@@ -514,11 +528,15 @@ export default function SettingsPage() {
                 <Input value={webdav.webdavFile || 'backup.json'} onChange={(e) => setDraft({ ...draft, webdavFile: e.target.value })} />
               </Field>
             </div>
-            <div className="mt-2 flex items-center gap-2 text-xs">
-              <Switch checked={!!webdav.webdavAutoBackup} onCheckedChange={(v) => setDraft({ ...draft, webdavAutoBackup: v })} />
-              自动备份
-              <Input type="number" className="w-20" value={webdav.webdavIntervalHours ?? 24} onChange={(e) => setDraft({ ...draft, webdavIntervalHours: Number(e.target.value) })} />
-              小时
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+              <label className="flex cursor-pointer items-center gap-1.5">
+                <Switch checked={!!webdav.webdavAutoBackup} onCheckedChange={(v) => setDraft({ ...draft, webdavAutoBackup: v })} />
+                自动备份
+              </label>
+              <div className="flex items-center gap-1.5">
+                <Input type="number" className="h-8 w-20" value={webdav.webdavIntervalHours ?? 24} onChange={(e) => setDraft({ ...draft, webdavIntervalHours: Number(e.target.value) })} />
+                <span className="text-muted-foreground">小时</span>
+              </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
               <span className="text-muted-foreground">同步内容：</span>
@@ -545,7 +563,27 @@ export default function SettingsPage() {
               <Button size="sm" onClick={async () => { try { await saveWebdavSettings(); const r = await api<{ url?: string }>('/api/webdav/backup', { method: 'POST', body: '{}' }); toast('ok', `已备份到 ${r.url}`); load(); } catch (e: any) { toast('err', `备份失败：${e.message}`); } }}>
                 立即备份
               </Button>
-              <Button size="sm" variant="outline" onClick={async () => { if (!window.confirm('从 WebDAV 恢复将覆盖当前数据，确定？')) return; try { await saveWebdavSettings(); await api('/api/webdav/restore', { method: 'POST', body: '{}' }); toast('ok', '已从 WebDAV 恢复备份'); load(); } catch (e: any) { toast('err', `恢复失败：${e.message}`); } }}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setConfirm({
+                    title: '从 WebDAV 恢复',
+                    description: '从 WebDAV 恢复将覆盖当前数据，确定继续吗？',
+                    confirmText: '恢复并覆盖',
+                    onConfirm: async () => {
+                      try {
+                        await saveWebdavSettings();
+                        await api('/api/webdav/restore', { method: 'POST', body: '{}' });
+                        toast('ok', '已从 WebDAV 恢复备份');
+                        load();
+                      } catch (e: any) {
+                        toast('err', `恢复失败：${e.message}`);
+                      }
+                    }
+                  })
+                }
+              >
                 从 WebDAV 恢复
               </Button>
             </div>
@@ -564,6 +602,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }
@@ -579,7 +618,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:border-primary/50 hover:text-foreground">
+    <label className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm transition-[border-color,transform] duration-150 ease-out hover:border-primary/50 hover:text-foreground active:scale-[0.97]">
       <span className="relative h-[18px] w-[18px] shrink-0 overflow-hidden rounded border border-input">
         <span className="absolute inset-0" style={{ backgroundColor: value }} />
         <input

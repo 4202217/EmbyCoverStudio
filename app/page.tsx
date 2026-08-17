@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Images } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -266,7 +266,10 @@ export default function DashboardPage() {
               {recentCols.length ? <RecentRow title="合集" items={recentCols} onPreview={setPreviewTarget} /> : null}
             </div>
           ) : (
-            <div className="py-2 text-sm text-muted-foreground">还没有生成记录</div>
+            <div className="flex flex-col items-center gap-1.5 py-6 text-sm text-muted-foreground">
+              <Images className="h-5 w-5 text-muted-foreground/40" />
+              还没有生成记录
+            </div>
           )}
         </CardContent>
       </Card>
@@ -362,7 +365,7 @@ function RecentRow({ title, items, wide, onPreview }: { title: string; items: Ta
               <div className="relative overflow-hidden rounded-md border bg-muted/40">
                 <img src={t.coverUrl} alt="" className="w-full" />
                 {t.kind === 'collection' || !t.template || t.template === 'single' ? (
-                  <div className="absolute inset-x-0 bottom-0 translate-y-full bg-black/75 px-1.5 py-1 text-[10px] leading-tight text-white transition-transform duration-200 group-hover:translate-y-0">
+                  <div className="absolute inset-x-0 bottom-0 translate-y-full bg-black/75 px-1.5 py-1 text-[10px] leading-tight text-white transition-transform duration-200 ease-out hoverable:group-hover:translate-y-0">
                     <span className="line-clamp-2">{t.posterSource || '未知来源影片'}</span>
                   </div>
                 ) : null}

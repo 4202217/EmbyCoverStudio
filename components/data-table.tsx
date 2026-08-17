@@ -39,7 +39,7 @@ export function DataTable<T extends { [k: string]: any }>({
   const [sort, setSort] = useState<Sort>(initialSort);
   const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
-  const [popup, setPopup] = useState<{ key: string; x: number; y: number; width: number } | null>(null);
+  const [popup, setPopup] = useState<{ key: string; x: number; y: number; width: number; below: boolean } | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -138,9 +138,10 @@ export function DataTable<T extends { [k: string]: any }>({
     const width = 200;
     let left = rect.left;
     let top = rect.bottom + 4;
+    const below = top + 300 <= window.innerHeight - 8;
     if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
-    if (top + 300 > window.innerHeight - 8) top = Math.max(8, rect.top - 300);
-    setPopup({ key, x: left, y: top, width });
+    if (!below) top = Math.max(8, rect.top - 300);
+    setPopup({ key, x: left, y: top, width, below });
   };
 
   const pendingFilters = (key: string) => filters[key] || [];
@@ -149,7 +150,7 @@ export function DataTable<T extends { [k: string]: any }>({
     <div>
       <div ref={scrollRef} className="relative max-h-[420px] overflow-auto rounded-md border">
         <Table>
-          <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
+          <TableHeader className="sticky top-0 z-10 bg-card/90 shadow-[0_1px_0_0_hsl(var(--border))] backdrop-blur-sm">
             <TableRow>
               {columns.map((c) => {
                 const active = sort?.key === c.key;
@@ -219,8 +220,8 @@ export function DataTable<T extends { [k: string]: any }>({
       {popup ? (
         <div
           data-filter-popup
-          className="fixed z-50 rounded-md border bg-popover p-2 text-xs text-popover-foreground shadow-xl"
-          style={{ left: popup.x, top: popup.y, width: popup.width }}
+          className="fixed z-50 animate-in fade-in zoom-in-95 rounded-md border bg-popover p-2 text-xs text-popover-foreground shadow-pop duration-150 ease-out motion-reduce:animate-none"
+          style={{ left: popup.x, top: popup.y, width: popup.width, transformOrigin: popup.below ? 'top left' : 'bottom left' }}
           onClick={(e) => e.stopPropagation()}
         >
           <FilterMenu
@@ -308,12 +309,12 @@ function FilterMenu<T>({
       </div>
       <div className="my-1.5 border-t" />
       <label className="flex cursor-pointer items-center gap-1.5 py-0.5">
-        <input type="checkbox" checked={selected.length === 0} onChange={(e) => onAll(e.target.checked)} />
+        <input type="checkbox" className="accent-primary" checked={selected.length === 0} onChange={(e) => onAll(e.target.checked)} />
         全选
       </label>
       {opts.map((o) => (
         <label key={o.value} className="flex cursor-pointer items-center gap-1.5 py-0.5">
-          <input type="checkbox" checked={selected.includes(o.value)} onChange={() => onToggle(o.value)} />
+          <input type="checkbox" className="accent-primary" checked={selected.includes(o.value)} onChange={() => onToggle(o.value)} />
           {o.label}
         </label>
       ))}

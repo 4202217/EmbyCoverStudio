@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Film, LayoutDashboard, Images, Settings, ScrollText, Sparkles, X } from 'lucide-react';
+import { Film, LayoutDashboard, Images, Settings, ScrollText, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { api } from '@/lib/api';
 import { useEffect, useState } from 'react';
 
@@ -63,7 +64,9 @@ export function Sidebar({ version }: { version: string }) {
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-5 border-r bg-card px-4 py-5">
       <div className="flex items-center gap-2.5 px-1">
-        <Film className="h-7 w-7 text-primary" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-sky-700 text-white shadow-soft">
+          <Film className="h-5 w-5" />
+        </div>
         <div>
           <div className="text-sm font-bold">Emby 封面工坊</div>
           <div className="text-xs text-muted-foreground">封面生成器</div>
@@ -78,8 +81,9 @@ export function Sidebar({ version }: { version: string }) {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
-                active && 'bg-accent text-primary font-semibold'
+                'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-[color,background-color,box-shadow] duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 after:absolute after:left-0 after:top-1/2 after:h-4 after:w-[3px] after:-translate-y-1/2 after:rounded-r-full after:bg-primary after:transition-opacity after:duration-150',
+                active && 'bg-primary/10 text-primary font-semibold after:opacity-100',
+                !active && 'after:opacity-0'
               )}
             >
               <Icon className="h-4 w-4" />
@@ -90,7 +94,7 @@ export function Sidebar({ version }: { version: string }) {
       </nav>
       <div className="mt-auto rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <span className={cn('h-2 w-2 shrink-0 rounded-full', state.color)} />
+          <span className={cn('h-2 w-2 shrink-0 rounded-full', state.color, status?.running && 'animate-pulse')} />
           {state.text}
         </div>
       </div>
@@ -103,30 +107,20 @@ export function Sidebar({ version }: { version: string }) {
           </span>
         ) : null}
       </Button>
-      {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(false)}>
-          <div className="max-h-[75vh] w-full max-w-lg overflow-auto rounded-lg border bg-card p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">更新记录</h2>
-              <button className="text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)} aria-label="关闭">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            {update?.hasUpdate ? (
-              <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-                <div className="mb-1 font-semibold text-amber-300">发现新版本 v{update.latest}</div>
-                {update.changelog ? (
-                  <div className="space-y-1 text-muted-foreground">
-                    <Markdown text={update.changelog} />
-                  </div>
-                ) : null}
+      <Modal open={open} onClose={() => setOpen(false)} title="更新记录">
+        {update?.hasUpdate ? (
+          <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+            <div className="mb-1 font-semibold text-amber-300">发现新版本 v{update.latest}</div>
+            {update.changelog ? (
+              <div className="space-y-1 text-muted-foreground">
+                <Markdown text={update.changelog} />
               </div>
             ) : null}
-            {update?.hasUpdate ? <div className="mb-3 border-t" /> : null}
-            <div className="max-h-[60vh] overflow-auto text-xs leading-relaxed">{changelog ? <Markdown text={changelog} /> : '加载中…'}</div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+        {update?.hasUpdate ? <div className="mb-3 border-t" /> : null}
+        <div className="max-h-[60vh] overflow-auto text-xs leading-relaxed">{changelog ? <Markdown text={changelog} /> : '加载中…'}</div>
+      </Modal>
     </aside>
   );
 }

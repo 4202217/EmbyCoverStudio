@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog, type ConfirmState } from '@/components/confirm-dialog';
 import { api } from '@/lib/api';
 import { toast } from '@/components/toast-provider';
 import { cn, fmtTime } from '@/lib/utils';
@@ -91,6 +92,7 @@ export default function TargetsPage() {
   const [forcePoll, setForcePoll] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const seenActive = useRef(false);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -303,18 +305,25 @@ export default function TargetsPage() {
   };
 
   // 恢复默认配置：重置样式/选图/手动选片并重新生成封面
-  const resetConfig = async (t: Target) => {
-    if (!window.confirm('恢复默认配置将重置该目标的样式与选图依据，并重新生成封面，确定？')) return;
-    try {
-      const r = await api<{ updated: number }>('/api/targets/batch', { method: 'POST', body: JSON.stringify({ ids: [t.id], action: 'reset' }) });
-      toast('info', `已恢复默认配置，正在重新生成封面（${r.updated} 项）`);
-      await load();
-      startSyncPolling();
-      setPending(null);
-      setDrafts({});
-    } catch (e: any) {
-      toast('err', e.message);
-    }
+  const resetConfig = (t: Target) => {
+    setConfirm({
+      title: '恢复默认配置',
+      description: '将重置该目标的封面样式与选图依据，并重新生成封面。确定要继续吗？',
+      confirmText: '恢复并重新生成',
+      destructive: false,
+      onConfirm: async () => {
+        try {
+          const r = await api<{ updated: number }>('/api/targets/batch', { method: 'POST', body: JSON.stringify({ ids: [t.id], action: 'reset' }) });
+          toast('info', `已恢复默认配置，正在重新生成封面（${r.updated} 项）`);
+          await load();
+          startSyncPolling();
+          setPending(null);
+          setDrafts({});
+        } catch (e: any) {
+          toast('err', e.message);
+        }
+      }
+    });
   };
 
   const clearFilters = () => {
@@ -324,6 +333,8 @@ export default function TargetsPage() {
     setCfgF('all');
     setCoverF('all');
   };
+
+  const hasFilters = !!(query.trim() || typeF !== 'all' || statusF !== 'all' || cfgF !== 'all' || coverF !== 'all');
 
   const syncLabels: Record<string, string> = { idle: '空闲', running: '进行中', paused: '已暂停', cancelled: '已取消', done: '已完成', failed: '失败' };
   const syncPct = sync?.total ? Math.round(((sync?.done || 0) / sync.total) * 100) : 0;
@@ -377,7 +388,7 @@ export default function TargetsPage() {
       </div>
 
       {syncVisible ? (
-        <Card className="p-3">
+        <Card className="p-3 animate-in fade-in slide-in-from-top-2 duration-200 ease-out motion-reduce:animate-none">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold">封面更新进度</span>
             <span className="text-xs text-muted-foreground">
@@ -389,7 +400,7 @@ export default function TargetsPage() {
             </span>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${syncPct}%` }} />
+            <div className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out" style={{ width: `${syncPct}%` }} />
           </div>
           <div className="mt-2.5 flex gap-2">
             {syncActive ? (
@@ -416,6 +427,7 @@ export default function TargetsPage() {
           <label className="flex cursor-pointer items-center gap-1.5">
             <input
               type="checkbox"
+              className="accent-primary"
               checked={visible.length > 0 && visible.every((t) => selected.has(t.id))}
               onChange={(e) => {
                 if (e.target.checked) setSelected(new Set(visible.map((t) => t.id)));
@@ -447,9 +459,15 @@ export default function TargetsPage() {
         {!loaded ? (
           <div className="rounded-md border bg-card p-6 text-center text-sm text-muted-foreground">加载中…</div>
         ) : !visible.length ? (
-          <div className="rounded-md border bg-card p-6 text-center text-sm text-muted-foreground">
-            <ImageIcon className="mx-auto mb-2 h-6 w-6 text-muted-foreground/40" />
-            没有符合条件的合集
+          <div className="rounded-md border bg-card p-8 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
+              <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
+            </div>
+            <p className="text-sm font-medium text-foreground">{hasFilters ? '没有符合条件的合集' : '还没有可管理的合集'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{hasFilters ? '试试调整筛选条件' : '点击同步媒体库，封面会自动出现在这里'}</p>
+            <Button size="sm" variant="outline" className="mt-4" onClick={hasFilters ? clearFilters : syncAll}>
+              {hasFilters ? '清除筛选' : '同步媒体库'}
+            </Button>
           </div>
         ) : null}
         {visible.map((t) => {
@@ -462,7 +480,11 @@ export default function TargetsPage() {
           return (
             <Card
               key={t.id}
-              className={cn('cursor-pointer p-3 transition-colors hover:border-primary/50', isSelected && 'border-primary', t.missing && 'opacity-70')}
+              className={cn(
+                'cursor-pointer p-3 transition-[border-color,background-color,box-shadow] duration-150 ease-out hover:border-primary/50',
+                isSelected && 'border-primary bg-primary/[0.04]',
+                t.missing && 'opacity-70'
+              )}
               onClick={(e) => {
                 if (e.ctrlKey || e.metaKey) {
                   setSelected((prev) => {
@@ -708,7 +730,7 @@ export default function TargetsPage() {
               {items.map((i) => (
                 <button
                   key={i.id}
-                  className="flex flex-col items-center gap-1 rounded-md border p-1.5 text-xs hover:border-primary"
+                  className="flex flex-col items-center gap-1 rounded-md border p-1.5 text-xs transition-[border-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.98]"
                   onClick={() => {
                     setPending((p) => ({ ...(p || { style: 'single', pickBy: 'manual', manualItemId: '', manualItemName: '' }), pickBy: 'manual', manualItemId: i.id, manualItemName: i.name }));
                     setItems([]);
@@ -722,6 +744,8 @@ export default function TargetsPage() {
           </div>
         ) : null}
       </Modal>
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }
@@ -753,14 +777,14 @@ function FilterSelect({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-sm text-foreground shadow-sm transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-sm text-foreground shadow-sm transition-[color,border-color,box-shadow,transform] duration-150 ease-out hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 active:scale-[0.97]"
       >
         {current?.icon || icon}
         <span className="whitespace-nowrap">{current?.label || ''}</span>
         <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-40 mt-1 min-w-full overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-xl">
+        <div className="absolute left-0 top-full z-40 mt-1 min-w-full origin-top-left overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-pop animate-in fade-in zoom-in-95 duration-150 ease-out motion-reduce:animate-none">
           {options.map((o) => (
             <button
               key={o.value}
@@ -791,7 +815,7 @@ function PickBtn({ active, disabled, onClick, children }: { active?: boolean; di
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40',
+        'rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary hover:text-primary active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40',
         active && 'border-primary bg-primary/10 text-primary'
       )}
     >

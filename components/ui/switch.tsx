@@ -18,8 +18,8 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
         }}
         {...props}
       />
-      <span className="absolute inset-0 rounded-full bg-muted transition-colors peer-checked:bg-primary peer-disabled:cursor-not-allowed peer-disabled:opacity-50" />
-      <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-4" />
+      <span className="absolute inset-0 rounded-full bg-muted transition-colors duration-200 ease-out peer-checked:bg-primary peer-disabled:cursor-not-allowed peer-disabled:opacity-50" />
+      <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out peer-checked:translate-x-4 motion-reduce:transition-none" />
     </label>
   )
 );

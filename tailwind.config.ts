@@ -44,10 +44,24 @@ const config: Config = {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)'
+      },
+      transitionTimingFunction: {
+        out: 'cubic-bezier(0.23, 1, 0.32, 1)',
+        'in-out': 'cubic-bezier(0.77, 0, 0.175, 1)',
+        drawer: 'cubic-bezier(0.32, 0.72, 0, 1)'
+      },
+      boxShadow: {
+        soft: '0 1px 2px 0 rgb(0 0 0 / 0.25), 0 10px 28px -12px rgb(0 0 0 / 0.45)',
+        pop: '0 16px 40px -12px rgb(0 0 0 / 0.55)'
       }
     }
   },
-  plugins: [require('tailwindcss-animate')]
+  plugins: [
+    require('tailwindcss-animate'),
+    ({ addVariant }: { addVariant: (name: string, definition: string) => void }) => {
+      addVariant('hoverable', '@media (hover: hover) and (pointer: fine)');
+    }
+  ]
 };
 
 export default config;

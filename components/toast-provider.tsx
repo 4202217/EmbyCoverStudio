@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type ToastType = 'ok' | 'err' | 'info';
-type ToastItem = { id: number; type: ToastType; text: string };
+type ToastItem = { id: number; type: ToastType; text: string; leaving?: boolean };
 
 let pushToast: ((type: ToastType, text: string) => void) | null = null;
 
@@ -20,18 +20,23 @@ export function toast(type: ToastType | string, text?: string) {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
 
+  const removeSoon = (id: number) => {
+    setItems((list) => list.map((t) => (t.id === id && !t.leaving ? { ...t, leaving: true } : t)));
+    setTimeout(() => setItems((list) => list.filter((t) => t.id !== id)), 180);
+  };
+
   useEffect(() => {
     pushToast = (type, text) => {
       const id = Date.now() + Math.random();
       setItems((list) => [...list, { id, type, text }]);
-      setTimeout(() => setItems((list) => list.filter((t) => t.id !== id)), 4200);
+      setTimeout(() => removeSoon(id), 4200);
     };
     return () => {
       pushToast = null;
     };
   }, []);
 
-  const dismiss = (id: number) => setItems((list) => list.filter((t) => t.id !== id));
+  const dismiss = (id: number) => removeSoon(id);
 
   return (
     <>
@@ -41,10 +46,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={t.id}
             className={cn(
-              'pointer-events-auto flex items-start gap-2 rounded-md border bg-card px-3 py-2.5 text-xs shadow-lg',
+              'pointer-events-auto flex items-start gap-2 rounded-md border bg-card px-3 py-2.5 text-xs shadow-lg transition-[transform,opacity] duration-150 ease-out motion-reduce:translate-y-0 animate-in fade-in slide-in-from-bottom-3 duration-200 ease-out motion-reduce:animate-none',
               t.type === 'ok' && 'border-emerald-500/40',
               t.type === 'err' && 'border-red-500/40',
-              t.type === 'info' && 'border-border'
+              t.type === 'info' && 'border-border',
+              t.leaving && 'translate-y-2 opacity-0'
             )}
           >
             {t.type === 'ok' ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" /> : null}
