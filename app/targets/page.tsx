@@ -87,7 +87,6 @@ export default function TargetsPage() {
   const [draftLoading, setDraftLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [preview, setPreview] = useState<Target | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
   const [sync, setSync] = useState<SyncState | null>(null);
   const [forcePoll, setForcePoll] = useState(false);
   const [showDone, setShowDone] = useState(false);
@@ -406,7 +405,7 @@ export default function TargetsPage() {
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={syncPct}
-              className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+              className="h-full rounded-full bg-primary film-progress transition-[width] duration-500 ease-out"
               style={{ width: `${syncPct}%` }}
             />
           </div>
@@ -680,12 +679,12 @@ export default function TargetsPage() {
       <Modal open={!!preview} onClose={() => setPreview(null)} title="封面预览" className="max-w-3xl">
         {preview ? (
           <div>
-            <div className="flex items-center justify-center">
+            <div className="flex items-center justify-center overflow-hidden rounded-lg py-6">
               {preview.coverUrl ? (
                 <img
                   src={`${preview.coverUrl}?v=${encodeURIComponent(preview.lastGeneratedAt || Date.now())}`}
                   alt={preview.name}
-                  className="max-h-[62vh] max-w-full rounded border object-contain"
+                  className="max-h-[50vh] max-w-full rounded-lg object-contain"
                 />
               ) : (
                 <div className="flex h-56 w-full items-center justify-center rounded border text-xs text-muted-foreground">
@@ -693,9 +692,9 @@ export default function TargetsPage() {
                 </div>
               )}
             </div>
-            <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-              <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
-                <div className="text-sm font-semibold text-foreground">{preview.name}</div>
+            <div className="mt-4 text-center">
+              <div className="text-base font-semibold text-foreground">{preview.name}</div>
+              <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
                 <div>
                   {preview.kind === 'library' ? '媒体库' : '合集'}
                   {preview.itemCount != null ? ` · ${preview.itemCount} 部作品` : ''}
@@ -703,27 +702,6 @@ export default function TargetsPage() {
                 </div>
                 {preview.posterSource ? <div>海报来源：{preview.posterSource}</div> : null}
                 {preview.lastError ? <div className="text-red-400">最近错误：{preview.lastError}</div> : null}
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <Button size="sm" variant="outline" onClick={() => setPreview(null)}>
-                  关闭
-                </Button>
-                <Button size="sm" disabled={previewBusy} onClick={async () => {
-                  setPreviewBusy(true);
-                  try {
-                    await api(`/api/targets/${preview.id}/generate`, { method: 'POST', body: '{}' });
-                    toast('ok', '封面已更新并上传');
-                    await load();
-                    setPreview(null);
-                  } catch (e: any) {
-                    toast('err', e.message);
-                  } finally {
-                    setPreviewBusy(false);
-                  }
-                }}>
-                  {previewBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  {previewBusy ? '生成中…' : '更新并上传'}
-                </Button>
               </div>
             </div>
           </div>

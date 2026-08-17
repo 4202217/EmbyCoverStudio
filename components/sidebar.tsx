@@ -92,13 +92,21 @@ export function Sidebar({ version }: { version: string }) {
           );
         })}
       </nav>
-      <div role="status" className="mt-auto rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <span className={cn('h-2 w-2 shrink-0 rounded-full', state.color, status?.running && 'animate-pulse')} />
-          {state.text}
+      <div role="status" className="mt-auto overflow-hidden rounded-md border bg-background/60 p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground shadow-inner">
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground/60">System</span>
+          <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', state.color, status?.running && 'animate-pulse')} />
+        </div>
+        <div className="mt-1 truncate text-foreground/90">{state.text}</div>
+        <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">
+          {status?.emby?.serverName
+            ? `EMBY · ${status.emby.serverName}`
+            : status?.emby?.configured
+              ? 'EMBY · 连接异常'
+              : 'EMBY · 未配置'}
         </div>
       </div>
-      <Button variant="link" className="h-auto justify-start gap-1.5 px-1 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
+      <Button variant="link" className="h-auto justify-start gap-1.5 px-1 font-mono text-xs text-muted-foreground" onClick={() => setOpen(true)}>
         v{version}
         {update?.hasUpdate ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">

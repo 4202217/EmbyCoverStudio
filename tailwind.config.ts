@@ -31,6 +31,10 @@ const config: Config = {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))'
         },
+        gold: {
+          DEFAULT: 'hsl(var(--gold))',
+          foreground: 'hsl(var(--gold-foreground))'
+        },
         popover: {
           DEFAULT: 'hsl(var(--popover))',
           foreground: 'hsl(var(--popover-foreground))'
@@ -49,6 +53,9 @@ const config: Config = {
         out: 'cubic-bezier(0.23, 1, 0.32, 1)',
         'in-out': 'cubic-bezier(0.77, 0, 0.175, 1)',
         drawer: 'cubic-bezier(0.32, 0.72, 0, 1)'
+      },
+      fontFamily: {
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', '"JetBrains Mono"', '"Fira Code"', 'monospace']
       },
       boxShadow: {
         soft: '0 1px 2px 0 rgb(0 0 0 / 0.25), 0 10px 28px -12px rgb(0 0 0 / 0.45)',
