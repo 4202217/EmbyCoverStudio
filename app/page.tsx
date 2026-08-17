@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, Images } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Images } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Modal } from '@/components/ui/modal';
 import { api } from '@/lib/api';
@@ -57,6 +58,7 @@ export default function DashboardPage() {
   const [previewTarget, setPreviewTarget] = useState<Target | null>(null);
   const [colors, setColors] = useState<Record<string, string | null>>({});
   const [previewIndex, setPreviewIndex] = useState(-1);
+  const [loaded, setLoaded] = useState(false);
 
   const load = async () => {
     try {
@@ -70,6 +72,8 @@ export default function DashboardPage() {
       setTasks(tk.tasks);
     } catch {
       // ignore
+    } finally {
+      setLoaded(true);
     }
   };
 
@@ -98,11 +102,6 @@ export default function DashboardPage() {
         .sort((a, b) => new Date(b.lastGeneratedAt || 0).getTime() - new Date(a.lastGeneratedAt || 0).getTime()),
     [targets]
   );
-  const taskPulse = useMemo(
-    () => [...tasks].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()).slice(0, 14).reverse(),
-    [tasks]
-  );
-
   useEffect(() => {
     load();
     const timer = setInterval(load, 15000);
@@ -165,6 +164,16 @@ export default function DashboardPage() {
     }
   };
 
+  const retry = async (id: string) => {
+    try {
+      await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
+      toast('ok', '已重新生成');
+      load();
+    } catch (e: any) {
+      toast('err', e.message);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-card via-card/85 to-card/40 p-6 shadow-soft">
@@ -183,72 +192,36 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <StatTile
-          label="Emby 服务器"
-          value={status?.emby?.serverName || '未命名服务器'}
-          sub={status?.emby?.version ? `v${status.emby.version}` : status?.emby?.configured ? '已配置' : '未配置'}
-          dot
-          dotColor={embyState.color}
-        />
-        <StatTile
-          label="监控合集"
-          value={`${status?.stats?.enabled ?? 0} / ${status?.stats?.targets ?? 0}`}
-          sub={`已生成封面 ${status?.stats?.generated ?? 0} 个`}
-        />
-        <StatTile label="生成封面" value={status?.stats?.coversGenerated ?? 0} sub="累计生成（含重新生成）" />
-        <StatTile
-          label="最近同步"
-          value={fmtTime(status?.lastRun)}
-          sub={status?.lastError ? '有错误，请关注' : status?.lastReason || '等待首次同步'}
-        />
-        <StatTile
-          label="定时任务"
-          value={status?.cron || '—'}
-          sub={status?.webhookPending ? 'Webhook 待执行' : status?.nextRun ? `下次 ${fmtTime(status.nextRun)}` : '等待触发'}
-        />
+        {!loaded ? (
+          [0, 1, 2, 3, 4].map((i) => <StatTileSkeleton key={i} />)
+        ) : (
+          <>
+            <StatTile
+              label="Emby 服务器"
+              value={status?.emby?.serverName || '未命名服务器'}
+              sub={status?.emby?.version ? `v${status.emby.version}` : status?.emby?.configured ? '已配置' : '未配置'}
+              dot
+              dotColor={embyState.color}
+            />
+            <StatTile
+              label="监控合集"
+              value={`${status?.stats?.enabled ?? 0} / ${status?.stats?.targets ?? 0}`}
+              sub={`已生成封面 ${status?.stats?.generated ?? 0} 个`}
+            />
+            <StatTile label="生成封面" value={status?.stats?.coversGenerated ?? 0} sub="累计生成（含重新生成）" />
+            <StatTile
+              label="最近同步"
+              value={fmtTime(status?.lastRun)}
+              sub={status?.lastError ? '有错误，请关注' : status?.lastReason || '等待首次同步'}
+            />
+            <StatTile
+              label="定时任务"
+              value={status?.cron || '—'}
+              sub={status?.webhookPending ? 'Webhook 待执行' : status?.nextRun ? `下次 ${fmtTime(status.nextRun)}` : '等待触发'}
+            />
+          </>
+        )}
       </div>
-
-      <Card className="overflow-hidden p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground/60">任务脉冲</span>
-              <span className="rounded-full bg-gold/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-gold">Pulse</span>
-            </div>
-            <div className="mt-1 font-mono text-[10px] text-muted-foreground/70">最近 {taskPulse.length} 次任务 · 柱高 = 更新数量</div>
-          </div>
-          {taskPulse.length ? (
-            <div className="flex flex-col gap-2">
-              <div className="flex h-12 items-end gap-1 border-b border-border/50 pb-px" role="img" aria-label="最近任务结果脉冲图">
-                {taskPulse.map((t) => (
-                  <div
-                    key={t.seq}
-                    title={`${t.name} · ${t.status}${t.updated ? ` · 更新 ${t.updated}` : ''}`}
-                    className={cn(
-                      'w-2.5 rounded-t-[2px] transition-[height] duration-300 ease-out',
-                      t.status === 'success'
-                        ? 'bg-gradient-to-t from-emerald-500/45 to-emerald-400'
-                        : t.status === 'failed'
-                          ? 'bg-gradient-to-t from-red-500/45 to-red-400 shadow-[0_0_10px_-2px_hsl(var(--destructive)/0.7)]'
-                          : t.status === 'cancelled'
-                            ? 'bg-gradient-to-t from-muted-foreground/25 to-muted-foreground/55'
-                            : 'bg-gradient-to-t from-amber-500/45 to-amber-400'
-                    )}
-                    style={{ height: `${14 + Math.min((t.updated || 0) * 2.2, 86)}%` }}
-                  />
-                ))}
-              </div>
-              <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground/70">
-                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />成功</span>
-                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />失败</span>
-                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />其他</span>
-              </div>
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground">暂无任务记录</div>
-          )}
-        </div>
-      </Card>
 
       {status?.font?.hint ? (
         <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -259,25 +232,64 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between gap-3 rounded-md border bg-background/60 p-3 font-mono shadow-inner">
-        <div className="min-w-0">
-          <div className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground/60">需要关注</div>
-          <div className="mt-1.5 truncate text-lg font-semibold text-foreground">
-            {failedTargets.length || failedTasks.length ? `${failedTargets.length + failedTasks.length} 个异常` : '全部正常'}
-          </div>
-          <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">
-            {[
-              failedTargets.length ? `封面异常 ${failedTargets.length}` : '',
-              failedTasks.length ? `失败任务 ${failedTasks.length}` : ''
-            ].filter(Boolean).join(' · ') || '无需关注'}
-          </div>
-        </div>
-        {failedTargets.length || failedTasks.length ? (
-          <Button size="sm" variant="outline" onClick={() => ack({ all: true })}>
-            一键清除
-          </Button>
-        ) : null}
-      </div>
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>需要关注</CardTitle>
+          <span className="rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-gold">Attention</span>
+        </CardHeader>
+        <CardContent>
+          {failedTargets.length || failedTasks.length ? (
+            <div className="space-y-4">
+              {failedTargets.length ? (
+                <div>
+                  <div className="mb-2 text-xs font-semibold text-muted-foreground">封面生成异常（{failedTargets.length}）</div>
+                  <div className="space-y-2">
+                    {failedTargets.map((t) => (
+                      <div key={t.id} className="flex items-center gap-3 rounded-md border bg-muted/30 p-2.5">
+                        <span className="shrink-0 text-sm font-semibold">{t.name}</span>
+                        <Badge variant="secondary">{t.kind === 'library' ? '媒体库' : '合集'}</Badge>
+                        <span className="min-w-0 flex-1 break-words text-xs text-red-400">
+                          {t.lastError}
+                        </span>
+                        <Button size="sm" onClick={() => retry(t.id)}>
+                          重试
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => ack({ targetId: t.id })}>
+                          已读
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {failedTasks.length ? (
+                <div>
+                  <div className="mb-2 text-xs font-semibold text-muted-foreground">最近失败任务（{failedTasks.length}）</div>
+                  <div className="space-y-2">
+                    {failedTasks.map((t) => (
+                      <div key={t.seq} className="flex items-center gap-3 rounded-md border bg-muted/30 p-2.5">
+                        <span className="shrink-0 text-sm font-semibold">{t.name}</span>
+                        <span className="text-xs text-muted-foreground">{fmtTime(t.ts)}</span>
+                        <span className="min-w-0 flex-1 break-words text-xs text-red-400">
+                          {t.error || '未知错误'}
+                        </span>
+                        <Button size="sm" variant="outline" onClick={() => ack({ taskSeq: t.seq })}>
+                          已读
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 py-2 text-sm text-emerald-400">
+              <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+              全部正常，无需关注
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
@@ -285,7 +297,12 @@ export default function DashboardPage() {
           <span className="rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-gold">Poster Wall</span>
         </CardHeader>
         <CardContent>
-          {recentLibs.length || recentCols.length ? (
+          {!loaded ? (
+            <div className="space-y-4">
+              <RecentSkeleton wide />
+              <RecentSkeleton />
+            </div>
+          ) : recentLibs.length || recentCols.length ? (
             <div className="space-y-4">
               {recentLibs.length ? (
                 <RecentRow
@@ -323,15 +340,13 @@ export default function DashboardPage() {
       <Modal open={!!previewTarget} onClose={() => setPreviewTarget(null)} title="封面预览" className="max-w-3xl">
         {previewTarget ? (
           <div>
-            <div
-              className="flex items-center justify-center overflow-hidden rounded-lg py-6"
-              style={previewTarget.coverUrl && colors[previewTarget.id] ? { boxShadow: `0 0 90px -24px ${colors[previewTarget.id]}` } : undefined}
-            >
+            <div className="flex items-center justify-center rounded-lg py-6">
               {previewTarget.coverUrl ? (
                 <img
                   src={`${previewTarget.coverUrl}?v=${encodeURIComponent(previewTarget.lastGeneratedAt || Date.now())}`}
                   alt={previewTarget.name}
                   className="max-h-[50vh] max-w-full rounded-lg object-contain"
+                  style={glowShadow(colors[previewTarget.id])}
                 />
               ) : (
                 <div className="flex h-56 w-full items-center justify-center rounded border text-xs text-muted-foreground">
@@ -384,6 +399,7 @@ function RecentRow({
   onPreview: (t: Target) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -433,11 +449,18 @@ function RecentRow({
                 <div
                   className={cn(
                     'relative overflow-hidden rounded-lg border bg-muted/40 transition-[border-color,box-shadow] duration-200 ease-out',
-                    wide ? 'aspect-video' : 'aspect-[9/16]'
+                    wide ? 'aspect-video' : 'aspect-[9/16]',
+                    !ready[t.id] && 'animate-pulse'
                   )}
-                  style={color ? { borderColor: `${color}55`, boxShadow: `0 10px 30px -14px ${color}` } : undefined}
+                  style={color ? { borderColor: withAlpha(color, 0.33), boxShadow: `0 10px 30px -14px ${color}` } : undefined}
                 >
-                  <img src={t.coverUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  <img
+                    src={t.coverUrl}
+                    alt=""
+                    onLoad={() => setReady((p) => ({ ...p, [t.id]: true }))}
+                    onError={() => setReady((p) => ({ ...p, [t.id]: true }))}
+                    className={cn('h-full w-full object-cover transition-opacity duration-300 ease-out', ready[t.id] ? 'opacity-100' : 'opacity-0')}
+                  />
                   {t.kind === 'collection' || !t.template || t.template === 'single' ? (
                     <div className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/90 via-black/45 to-transparent px-1.5 py-1 text-[10px] leading-tight text-white transition-transform duration-200 ease-out hoverable:group-hover:translate-y-0">
                       <span className="line-clamp-2">{t.posterSource || '未知来源影片'}</span>
@@ -476,7 +499,7 @@ function StatTile({
   dotColor?: string;
 }) {
   return (
-    <div className="rounded-md border bg-background/60 p-3 font-mono shadow-inner">
+    <div className="rounded-md border bg-card p-3 font-mono shadow-soft">
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-[9px] uppercase tracking-[0.25em] text-muted-foreground/60">{label}</span>
         {dot ? <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dotColor)} /> : null}
@@ -485,4 +508,50 @@ function StatTile({
       <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">{sub}</div>
     </div>
   );
+}
+
+function StatTileSkeleton() {
+  return (
+    <div className="rounded-md border bg-card p-3 font-mono shadow-soft">
+      <div className="h-2.5 w-16 animate-pulse rounded bg-muted" />
+      <div className="mt-2 h-5 w-3/4 animate-pulse rounded bg-muted/70" />
+      <div className="mt-1.5 h-2.5 w-1/2 animate-pulse rounded bg-muted/60" />
+    </div>
+  );
+}
+
+function RecentSkeleton({ wide }: { wide?: boolean }) {
+  return (
+    <div>
+      <div className="mb-2 h-3 w-16 animate-pulse rounded bg-muted" />
+      <div className="flex gap-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className={cn('shrink-0 animate-pulse rounded-lg bg-muted/50', wide ? 'aspect-video w-36' : 'aspect-[9/16] w-24')} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function visibleGlowColor(color: string | null | undefined): string | undefined {
+  if (!color) return undefined;
+  const m = color.match(/\d+/g);
+  if (m && m.length >= 3) {
+    const [r, g, b] = m.map(Number);
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    if (lum < 0.32) return 'hsl(var(--primary))';
+  }
+  return color;
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const m = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+  if (m) return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
+  return `hsl(var(--primary) / ${alpha})`;
+}
+
+function glowShadow(color: string | null | undefined): { boxShadow: string } | undefined {
+  const g = visibleGlowColor(color);
+  if (!g) return undefined;
+  return { boxShadow: `0 0 0 1px ${withAlpha(g, 0.4)}, 0 0 18px 2px ${withAlpha(g, 0.55)}, 0 0 44px 10px ${withAlpha(g, 0.28)}` };
 }

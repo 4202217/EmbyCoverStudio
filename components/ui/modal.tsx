@@ -18,7 +18,7 @@ export function Modal({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4 animate-in fade-in duration-200 ease-out motion-reduce:animate-none" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4 !m-0 animate-in fade-in duration-200 ease-out motion-reduce:animate-none" onClick={onClose}>
       <div
         className={cn(
           'my-auto max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg border bg-card p-5 shadow-pop animate-in fade-in zoom-in-95 duration-200 ease-out motion-reduce:animate-none',

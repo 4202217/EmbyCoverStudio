@@ -92,7 +92,7 @@ export function Sidebar({ version }: { version: string }) {
           );
         })}
       </nav>
-      <div role="status" className="mt-auto overflow-hidden rounded-md border bg-background/60 p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground shadow-inner">
+      <div role="status" className="mt-auto overflow-hidden rounded-md border bg-card p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground shadow-soft">
         <div className="flex items-center justify-between">
           <span className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground/60">System</span>
           <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', state.color, status?.running && 'animate-pulse')} />
