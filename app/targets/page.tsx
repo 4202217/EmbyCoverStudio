@@ -358,8 +358,8 @@ export default function TargetsPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="搜索名称…" value={query} onChange={(e) => setQuery(e.target.value)} className="w-56 pl-8" />
+          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="搜索名称…" aria-label="搜索名称" value={query} onChange={(e) => setQuery(e.target.value)} className="w-56 pl-8" />
         </div>
         <FilterSelect value={typeF} onChange={setTypeF} icon={<LayoutGrid className="h-3.5 w-3.5" />} options={[
           { value: 'all', label: '全部类型', icon: <LayoutGrid className="h-3.5 w-3.5" /> },
@@ -381,8 +381,8 @@ export default function TargetsPage() {
           { value: 'generated', label: '已生成', icon: <ImageIcon className="h-3.5 w-3.5" /> },
           { value: 'error', label: '有错误', icon: <AlertTriangle className="h-3.5 w-3.5" /> }
         ]} />
-        <button className="flex items-center gap-1 px-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" onClick={clearFilters}>
-          <XCircle className="h-3.5 w-3.5" />
+        <button className="flex cursor-pointer items-center gap-1 px-1 py-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" onClick={clearFilters}>
+          <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
           清除筛选
         </button>
       </div>
@@ -400,7 +400,15 @@ export default function TargetsPage() {
             </span>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out" style={{ width: `${syncPct}%` }} />
+            <div
+              role="progressbar"
+              aria-label="封面更新进度"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={syncPct}
+              className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+              style={{ width: `${syncPct}%` }}
+            />
           </div>
           <div className="mt-2.5 flex gap-2">
             {syncActive ? (
@@ -514,7 +522,7 @@ export default function TargetsPage() {
                   }}
                 >
                   {t.coverUrl ? (
-                  <img src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`} alt="" className="h-full w-full object-cover" />
+                  <img src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`} alt="" loading="lazy" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <ImageIcon className="h-5 w-5 text-muted-foreground/50" />
@@ -730,7 +738,7 @@ export default function TargetsPage() {
               {items.map((i) => (
                 <button
                   key={i.id}
-                  className="flex flex-col items-center gap-1 rounded-md border p-1.5 text-xs transition-[border-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.98]"
+                  className="flex cursor-pointer flex-col items-center gap-1 rounded-md border p-1.5 text-xs transition-[border-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.98]"
                   onClick={() => {
                     setPending((p) => ({ ...(p || { style: 'single', pickBy: 'manual', manualItemId: '', manualItemName: '' }), pickBy: 'manual', manualItemId: i.id, manualItemName: i.name }));
                     setItems([]);
@@ -777,11 +785,11 @@ function FilterSelect({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-sm text-foreground shadow-sm transition-[color,border-color,box-shadow,transform] duration-150 ease-out hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 active:scale-[0.97]"
+        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-sm text-foreground shadow-sm transition-[color,border-color,box-shadow,transform] duration-150 ease-out hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 active:scale-[0.97]"
       >
         {current?.icon || icon}
         <span className="whitespace-nowrap">{current?.label || ''}</span>
-        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        <ChevronDown aria-hidden="true" className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
       {open ? (
         <div className="absolute left-0 top-full z-40 mt-1 min-w-full origin-top-left overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-pop animate-in fade-in zoom-in-95 duration-150 ease-out motion-reduce:animate-none">
@@ -790,7 +798,7 @@ function FilterSelect({
               key={o.value}
               type="button"
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                 o.value === value && 'bg-primary/10 text-primary'
               )}
               onClick={() => {
@@ -815,7 +823,7 @@ function PickBtn({ active, disabled, onClick, children }: { active?: boolean; di
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary hover:text-primary active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40',
+        'cursor-pointer rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary hover:text-primary active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40',
         active && 'border-primary bg-primary/10 text-primary'
       )}
     >

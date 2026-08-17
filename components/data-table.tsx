@@ -156,7 +156,12 @@ export function DataTable<T extends { [k: string]: any }>({
                 const active = sort?.key === c.key;
                 const filtered = (filters[c.key]?.length || 0) > 0;
                 return (
-                  <TableHead key={c.key} style={c.width ? { width: c.width } : undefined} className={cn(c.sortable && 'cursor-pointer select-none whitespace-nowrap')}>
+                  <TableHead
+                    key={c.key}
+                    style={c.width ? { width: c.width } : undefined}
+                    aria-sort={active && c.sortable ? (sort!.dir === 1 ? 'ascending' : 'descending') : undefined}
+                    className={cn(c.sortable && 'cursor-pointer select-none whitespace-nowrap')}
+                  >
                     <button
                       type="button"
                       data-th-filter={c.filterOpts ? '1' : undefined}
@@ -178,17 +183,17 @@ export function DataTable<T extends { [k: string]: any }>({
                       {c.sortable ? (
                         active ? (
                           sort!.dir === 1 ? (
-                            <ArrowUp className="h-3 w-3 shrink-0" />
+                            <ArrowUp aria-hidden="true" className="h-3 w-3 shrink-0" />
                           ) : (
-                            <ArrowDown className="h-3 w-3 shrink-0" />
+                            <ArrowDown aria-hidden="true" className="h-3 w-3 shrink-0" />
                           )
                         ) : (
-                          <ArrowUpDown className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+                          <ArrowUpDown aria-hidden="true" className="h-3 w-3 shrink-0 text-muted-foreground/50" />
                         )
                       ) : null}
                       {c.filterOpts ? (
                         <span className={cn('ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-sm border', filtered ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40')}>
-                          <Check className={cn('h-2.5 w-2.5', !filtered && 'opacity-0')} />
+                          <Check aria-hidden="true" className={cn('h-2.5 w-2.5', !filtered && 'opacity-0')} />
                         </span>
                       ) : null}
                     </button>
@@ -295,13 +300,13 @@ function FilterMenu<T>({
     <div className="space-y-1">
       <div className="grid grid-cols-2 gap-1">
         <button
-          className={cn('rounded border px-2 py-1 hover:border-primary', sort?.key === col.key && sort.dir === 1 ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
+          className={cn('cursor-pointer rounded border px-2 py-1 hover:border-primary', sort?.key === col.key && sort.dir === 1 ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
           onClick={() => onSort(1)}
         >
           升序
         </button>
         <button
-          className={cn('rounded border px-2 py-1 hover:border-primary', sort?.key === col.key && sort.dir === -1 ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
+          className={cn('cursor-pointer rounded border px-2 py-1 hover:border-primary', sort?.key === col.key && sort.dir === -1 ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground')}
           onClick={() => onSort(-1)}
         >
           降序
@@ -319,7 +324,7 @@ function FilterMenu<T>({
         </label>
       ))}
       <div className="my-1.5 border-t" />
-      <button className="text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={onClear}>
+      <button className="cursor-pointer text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={onClear}>
         清空筛选
       </button>
     </div>

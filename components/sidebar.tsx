@@ -62,10 +62,10 @@ export function Sidebar({ version }: { version: string }) {
   })();
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-5 border-r bg-card px-4 py-5">
+    <aside className="flex w-56 shrink-0 flex-col gap-5 border-r bg-card/80 px-4 py-5 backdrop-blur-xl">
       <div className="flex items-center gap-2.5 px-1">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-sky-700 text-white shadow-soft">
-          <Film className="h-5 w-5" />
+          <Film aria-hidden="true" className="h-5 w-5" />
         </div>
         <div>
           <div className="text-sm font-bold">Emby 封面工坊</div>
@@ -86,13 +86,13 @@ export function Sidebar({ version }: { version: string }) {
                 !active && 'after:opacity-0'
               )}
             >
-              <Icon className="h-4 w-4" />
+              <Icon aria-hidden="true" className="h-4 w-4" />
               {item.label}
             </Link>
           );
         })}
       </nav>
-      <div className="mt-auto rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+      <div role="status" className="mt-auto rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <span className={cn('h-2 w-2 shrink-0 rounded-full', state.color, status?.running && 'animate-pulse')} />
           {state.text}
@@ -102,7 +102,7 @@ export function Sidebar({ version }: { version: string }) {
         v{version}
         {update?.hasUpdate ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-            <Sparkles className="h-2.5 w-2.5" />
+            <Sparkles aria-hidden="true" className="h-2.5 w-2.5" />
             有新版本
           </span>
         ) : null}

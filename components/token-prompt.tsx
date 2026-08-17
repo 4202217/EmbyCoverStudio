@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { registerTokenPrompt } from '@/lib/api';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 
 export function TokenPrompt() {
   const [open, setOpen] = useState(false);
@@ -28,8 +28,8 @@ export function TokenPrompt() {
   return (
     <Modal open={open} onClose={() => finish('')} title="访问令牌">
       <p className="mb-3 text-xs text-muted-foreground">服务端已开启访问令牌，请输入后继续（会保存在本机浏览器）。</p>
-      <Input
-        type="password"
+      <PasswordInput
+        aria-label="访问令牌"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="访问令牌"

@@ -183,7 +183,7 @@ export default function DashboardPage() {
 
       {status?.font?.hint ? (
         <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
           <span>
             {status.font.hint}（当前使用字体：{status.font.fontFamily || '未知'}）
           </span>
@@ -246,7 +246,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="flex items-center gap-2 py-2 text-sm text-emerald-400">
-              <CheckCircle2 className="h-4 w-4" />
+              <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
               全部正常，无需关注
             </div>
           )}
@@ -363,7 +363,7 @@ function RecentRow({ title, items, wide, onPreview }: { title: string; items: Ta
           {items.map((t) => (
             <div key={t.id} className={cn('group shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')} onClick={() => onPreview(t)}>
               <div className="relative overflow-hidden rounded-md border bg-muted/40">
-                <img src={t.coverUrl} alt="" className="w-full" />
+                <img src={t.coverUrl} alt="" loading="lazy" className="w-full" />
                 {t.kind === 'collection' || !t.template || t.template === 'single' ? (
                   <div className="absolute inset-x-0 bottom-0 translate-y-full bg-black/75 px-1.5 py-1 text-[10px] leading-tight text-white transition-transform duration-200 ease-out hoverable:group-hover:translate-y-0">
                     <span className="line-clamp-2">{t.posterSource || '未知来源影片'}</span>

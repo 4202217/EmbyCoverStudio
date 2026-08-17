@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { PasswordInput } from '@/components/ui/password-input';
 import { ConfirmDialog, type ConfirmState } from '@/components/confirm-dialog';
 import { api, rawFetch } from '@/lib/api';
 import { toast } from '@/components/toast-provider';
@@ -266,10 +267,10 @@ export default function SettingsPage() {
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="服务器地址">
-              <Input value={draft.embyUrl || ''} placeholder="http://192.168.1.100:8096" onChange={(e) => setDraft({ ...draft, embyUrl: e.target.value })} />
+              <Input aria-label="服务器地址" value={draft.embyUrl || ''} placeholder="http://192.168.1.100:8096" onChange={(e) => setDraft({ ...draft, embyUrl: e.target.value })} />
             </Field>
             <Field label="API 密钥">
-              <Input type="password" value={draft.embyApiKey || ''} onChange={(e) => setDraft({ ...draft, embyApiKey: e.target.value })} />
+              <PasswordInput aria-label="API 密钥" value={draft.embyApiKey || ''} onChange={(e) => setDraft({ ...draft, embyApiKey: e.target.value })} />
             </Field>
           </div>
           <div className="flex gap-2">
@@ -298,10 +299,10 @@ export default function SettingsPage() {
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="定时同步 cron">
-              <Input value={draft.cron || ''} onChange={(e) => setDraft({ ...draft, cron: e.target.value })} />
+              <Input aria-label="定时同步 cron" value={draft.cron || ''} onChange={(e) => setDraft({ ...draft, cron: e.target.value })} />
             </Field>
             <Field label="Webhook 防抖（毫秒）">
-              <Input type="number" value={draft.webhookDebounceMs ?? 20000} onChange={(e) => setDraft({ ...draft, webhookDebounceMs: Number(e.target.value) })} />
+              <Input type="number" aria-label="Webhook 防抖（毫秒）" value={draft.webhookDebounceMs ?? 20000} onChange={(e) => setDraft({ ...draft, webhookDebounceMs: Number(e.target.value) })} />
             </Field>
           </div>
           <div className="flex items-center gap-4">
@@ -516,16 +517,16 @@ export default function SettingsPage() {
             <div className="mb-2 text-sm font-semibold">WebDAV 同步</div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="WebDAV 地址">
-                <Input placeholder="https://dav.example.com/dav/emby-cover-studio" value={webdav.webdavUrl || ''} onChange={(e) => setDraft({ ...draft, webdavUrl: e.target.value })} />
+                <Input aria-label="WebDAV 地址" placeholder="https://dav.example.com/dav/emby-cover-studio" value={webdav.webdavUrl || ''} onChange={(e) => setDraft({ ...draft, webdavUrl: e.target.value })} />
               </Field>
               <Field label="用户名">
-                <Input placeholder="用户名" value={webdav.webdavUser || ''} onChange={(e) => setDraft({ ...draft, webdavUser: e.target.value })} />
+                <Input aria-label="用户名" placeholder="用户名" value={webdav.webdavUser || ''} onChange={(e) => setDraft({ ...draft, webdavUser: e.target.value })} />
               </Field>
               <Field label="密码">
-                <Input type="password" placeholder="密码" value={webdav.webdavPassword || ''} onChange={(e) => setDraft({ ...draft, webdavPassword: e.target.value })} />
+                <PasswordInput aria-label="密码" placeholder="密码" value={webdav.webdavPassword || ''} onChange={(e) => setDraft({ ...draft, webdavPassword: e.target.value })} />
               </Field>
               <Field label="备份文件名">
-                <Input value={webdav.webdavFile || 'backup.json'} onChange={(e) => setDraft({ ...draft, webdavFile: e.target.value })} />
+                <Input aria-label="备份文件名" value={webdav.webdavFile || 'backup.json'} onChange={(e) => setDraft({ ...draft, webdavFile: e.target.value })} />
               </Field>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
@@ -534,7 +535,7 @@ export default function SettingsPage() {
                 自动备份
               </label>
               <div className="flex items-center gap-1.5">
-                <Input type="number" className="h-8 w-20" value={webdav.webdavIntervalHours ?? 24} onChange={(e) => setDraft({ ...draft, webdavIntervalHours: Number(e.target.value) })} />
+                <Input type="number" aria-label="自动备份间隔小时数" className="h-8 w-20" value={webdav.webdavIntervalHours ?? 24} onChange={(e) => setDraft({ ...draft, webdavIntervalHours: Number(e.target.value) })} />
                 <span className="text-muted-foreground">小时</span>
               </div>
             </div>
@@ -597,7 +598,7 @@ export default function SettingsPage() {
           <CardTitle>访问令牌（可选）</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center gap-3">
-          <Input type="password" value={draft.accessToken || ''} placeholder="留空表示不启用" onChange={(e) => setDraft({ ...draft, accessToken: e.target.value })} className="max-w-sm" />
+          <PasswordInput aria-label="访问令牌" value={draft.accessToken || ''} placeholder="留空表示不启用" onChange={(e) => setDraft({ ...draft, accessToken: e.target.value })} className="max-w-sm" />
           <Button onClick={() => save({ accessToken: draft.accessToken })}>保存访问令牌</Button>
         </CardContent>
       </Card>

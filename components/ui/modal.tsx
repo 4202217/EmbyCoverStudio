@@ -28,8 +28,8 @@ export function Modal({
       >
         <div className="mb-3 flex items-center justify-between">
           {title ? <h2 className="text-sm font-semibold">{title}</h2> : null}
-          <button className="text-muted-foreground transition-[color,transform] duration-150 ease-out hover:text-foreground active:scale-95" onClick={onClose} aria-label="关闭">
-            <X className="h-4 w-4" />
+          <button className="cursor-pointer p-1.5 -m-1.5 text-muted-foreground transition-[color,transform] duration-150 ease-out hover:text-foreground active:scale-95" onClick={onClose} aria-label="关闭">
+            <X aria-hidden="true" className="h-4 w-4" />
           </button>
         </div>
         {children}

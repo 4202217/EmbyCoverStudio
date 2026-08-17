@@ -41,7 +41,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-80 flex-col gap-2">
+      <div role="status" aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-80 flex-col gap-2">
         {items.map((t) => (
           <div
             key={t.id}
@@ -53,12 +53,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               t.leaving && 'translate-y-2 opacity-0'
             )}
           >
-            {t.type === 'ok' ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" /> : null}
-            {t.type === 'err' ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" /> : null}
-            {t.type === 'info' ? <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-400" /> : null}
+            {t.type === 'ok' ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" /> : null}
+            {t.type === 'err' ? <AlertTriangle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" /> : null}
+            {t.type === 'info' ? <Info aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-400" /> : null}
             <span className="min-w-0 flex-1 break-words">{t.text}</span>
-            <button className="text-muted-foreground hover:text-foreground" onClick={() => dismiss(t.id)} aria-label="关闭">
-              <X className="h-3.5 w-3.5" />
+            <button className="cursor-pointer p-1.5 -m-1.5 text-muted-foreground transition-[color,transform] duration-150 ease-out hover:text-foreground active:scale-95" onClick={() => dismiss(t.id)} aria-label="关闭">
+              <X aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </div>
         ))}
