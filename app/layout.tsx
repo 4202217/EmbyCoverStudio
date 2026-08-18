@@ -7,7 +7,15 @@ import pkg from '../package.json';
 
 export const metadata: Metadata = {
   title: 'Emby 封面工坊',
-  description: 'Emby 媒体库/合集封面自动生成工具'
+  description: 'Emby 媒体库/合集封面自动生成工具',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '32x32' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' }
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }]
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
