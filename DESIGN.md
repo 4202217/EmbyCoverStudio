@@ -11,6 +11,7 @@ colors:
   foreground: "hsl(216 40% 94%)"
   muted-foreground: "hsl(215 25% 65%)"
   border: "hsl(218 28% 24%)"
+  vignette: "rgb(0 0 0 / 0.38)"
   destructive: "hsl(6 78% 57%)"
   success: "#34d399"
   warning: "#fbbf24"
@@ -36,6 +37,14 @@ typography:
     fontFamily: "inherit"
     fontSize: "0.75rem"
     fontWeight: 500
+  label-micro:
+    fontFamily: "inherit"
+    fontSize: "0.625rem"
+    fontWeight: 500
+  caption:
+    fontFamily: "inherit"
+    fontSize: "0.6875rem"
+    fontWeight: 400
   mono:
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'JetBrains Mono', 'Fira Code', monospace"
     fontSize: "0.75rem"
@@ -134,6 +143,7 @@ Emby 封面工坊是一个暗色、影院感的操作控制台：深夜放映厅
 - **正文前景**（`hsl(216 40% 94%)`）：标题与正文。
 - **弱化前景**（`hsl(215 25% 65%)`）：次级说明、时间戳；不用于需要强对比的操作文案。
 - **描边**（`hsl(218 28% 24%)`）：卡片、输入框、分割线的统一 1px 描边。
+- **放映厅暗角**（`rgb(0 0 0 / 0.38)`）：全局背景边缘的径向压暗，让画面中心更亮、四角沉入夜色；只出现在全局背景，不在任何组件上使用。
 
 ### Named Rules
 **The One Accent Rule.** 青色是唯一交互强调色，金色只属于品牌时刻，语义色只承载状态。任何页面不得为装饰引入第二个强调色相。
@@ -153,6 +163,8 @@ Emby 封面工坊是一个暗色、影院感的操作控制台：深夜放映厅
 - **Title**（600，`0.875rem`，1，`-0.01em`）：卡片标题，小但重，靠留白与描边分层。
 - **Body**（400，`0.875rem`，1.5）：正文与说明；次级说明用弱化前景色，描述性文字不超过约 52–65 字符行宽。
 - **Label**（500，`0.75rem`）：表单标签、按钮文字；大写 + `0.18em` 字距仅用于极小（9–10px）的品牌/标签语境。
+- **Label / Micro**（500，`0.625rem`）：品牌语、状态卡标签、指标卡标签、触发方式徽章等大写等宽微标签；全页最小的文字，仅用于测量与品牌语境。
+- **Caption**（400，`0.6875rem`）：指标卡说明、海报来源、次级元信息等辅助说明，必须保持 AA 对比。
 - **Mono**（500，`0.75rem`）：指标值、时间戳、进度、cron 表达式、版本号；全局 `tabular-nums` 保证数字对齐。
 
 ### Named Rules
@@ -175,6 +187,7 @@ Emby 封面工坊是一个暗色、影院感的操作控制台：深夜放映厅
 - **Pop**（`0 16px 40px -12px rgb(0 0 0 / 0.55)`）：hover、选中、弹窗抬升。
 - **按钮辉光**（`inset 0 1px 0 0 rgb(255 255 255 / 0.12), 0 4px 16px -6px hsl(var(--primary) / 0.65)`）：主按钮的受光面。
 - **封面光晕**：从封面主色提取，33% 透明度描边 + 10–44px 径向阴影；主色亮度低于 0.32 时回退为青色。
+- **滑块圆钮阴影**（`0 1px 4px rgb(0 0 0 / 0.4)`）：设置页字号滑块圆钮的受光阴影。
 
 ### Named Rules
 **The Flat-at-Rest Rule.** 静止时只有描边没有阴影；阴影是 hover、选中、弹窗等状态变化的信号，不得常驻。

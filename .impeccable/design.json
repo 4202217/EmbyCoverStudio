@@ -58,6 +58,12 @@
         "canonical": "hsl(218 28% 24%)",
         "tonalRamp": ["oklch(0.20 0.03 245)", "oklch(0.25 0.03 245)", "oklch(0.30 0.03 245)", "oklch(0.35 0.03 245)", "oklch(0.42 0.03 245)", "oklch(0.50 0.02 245)", "oklch(0.60 0.02 245)", "oklch(0.72 0.01 245)"]
       },
+      "vignette": {
+        "role": "neutral",
+        "displayName": "放映厅暗角",
+        "canonical": "rgb(0 0 0 / 0.38)",
+        "tonalRamp": ["rgb(0 0 0 / 0.06)", "rgb(0 0 0 / 0.10)", "rgb(0 0 0 / 0.16)", "rgb(0 0 0 / 0.22)", "rgb(0 0 0 / 0.30)", "rgb(0 0 0 / 0.38)", "rgb(0 0 0 / 0.48)", "rgb(0 0 0 / 0.60)"]
+      },
       "destructive": {
         "role": "tertiary",
         "displayName": "危险红",
@@ -82,12 +88,15 @@
       "title": { "displayName": "Title", "purpose": "卡片标题，小但重，靠留白与描边分层。" },
       "body": { "displayName": "Body", "purpose": "正文与次级说明，描述性文字不超过 52–65 字符行宽。" },
       "label": { "displayName": "Label", "purpose": "表单标签与按钮文字；大写 + 0.18em 字距仅用于 9–10px 品牌语境。" },
+      "label-micro": { "displayName": "Label / Micro", "purpose": "品牌语、状态卡标签、指标卡标签、触发方式徽章等大写等宽微标签（10px）。" },
+      "caption": { "displayName": "Caption", "purpose": "指标卡说明、海报来源、次级元信息等辅助说明（11px），须保持 AA 对比。" },
       "mono": { "displayName": "Mono", "purpose": "指标值、时间戳、进度、cron 与版本号；全局 tabular-nums。" }
     },
     "shadows": [
       { "name": "soft", "value": "0 1px 2px 0 rgb(0 0 0 / 0.25), 0 10px 28px -12px rgb(0 0 0 / 0.45)", "purpose": "卡片静止阴影。" },
       { "name": "pop", "value": "0 16px 40px -12px rgb(0 0 0 / 0.55)", "purpose": "hover、选中、弹窗的抬升阴影。" },
       { "name": "button-glow", "value": "inset 0 1px 0 0 rgb(255 255 255 / 0.12), 0 4px 16px -6px hsl(194 100% 43% / 0.65)", "purpose": "主按钮的受光面与青色辉光。" },
+      { "name": "thumb-shadow", "value": "0 1px 4px rgb(0 0 0 / 0.4)", "purpose": "滑块圆钮的受光阴影。" },
       { "name": "cover-glow", "value": "0 0 0 1px <dominant-color at 33%>, 0 0 18px 2px <dominant-color at 55%>, 0 0 44px 10px <dominant-color at 28%>", "purpose": "封面墙光晕，颜色取自每张海报的支配色；亮度低于 0.32 时回退为青色。" }
     ],
     "motion": [

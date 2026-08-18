@@ -1,0 +1,5 @@
+{
+  "detector": {
+    "ignoreValues": ["rgb(0 0 0 / 0.4)"]
+  }
+}

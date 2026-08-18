@@ -124,6 +124,20 @@
       transform: none;
     }
   }
+  @media (hover: hover) and (pointer: fine) {
+    .group:hover .title-marquee {
+      animation: title-marquee 1.4s linear 0.6s both;
+      will-change: transform;
+    }
+  }
+  @keyframes title-marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(calc(var(--marquee-dist, 0px) * -1));
+    }
+  }
 }
 
 ::-webkit-scrollbar {

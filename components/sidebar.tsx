@@ -34,7 +34,7 @@ export function Sidebar({ version, className }: { version: string; className?: s
   const [changelog, setChangelog] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [update, setUpdate] = useState<{ hasUpdate?: boolean; current?: string; latest?: string; changelog?: string } | null>(null);
-  const [status, setStatus] = useState<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string }; stats?: { failed?: number } } | null>(null);
+  const [status, setStatus] = useState<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string; version?: string }; stats?: { failed?: number } } | null>(null);
 
   useEffect(() => {
     api<{ text: string }>('/api/changelog')
@@ -44,7 +44,7 @@ export function Sidebar({ version, className }: { version: string; className?: s
 
   useEffect(() => {
     const load = () => {
-      api<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string }; stats?: { failed?: number } }>('/api/status')
+      api<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string; version?: string }; stats?: { failed?: number } }>('/api/status')
         .then(setStatus)
         .catch(() => setStatus(null));
     };
@@ -69,7 +69,7 @@ export function Sidebar({ version, className }: { version: string; className?: s
     if (!s) return { color: 'bg-red-500', text: '服务不可用' };
     if (s.running) return { color: 'bg-sky-500', text: '正在同步…' };
     if ((s.stats?.failed || 0) > 0) return { color: 'bg-red-500', text: `${s.stats?.failed ?? 0} 个封面异常` };
-    if (s.emby?.connected) return { color: 'bg-emerald-500', text: `已连接 ${s.emby.serverName || 'Emby'}` };
+    if (s.emby?.connected) return { color: 'bg-emerald-500', text: '已连接' };
     if (s.emby?.configured) return { color: 'bg-red-500', text: 'Emby 连接异常' };
     return { color: 'bg-slate-400', text: '未配置 Emby' };
   })();
@@ -105,13 +105,13 @@ export function Sidebar({ version, className }: { version: string; className?: s
       </nav>
       <div role="status" className="mt-auto overflow-hidden rounded-lg border bg-card p-3 font-mono text-[11px] leading-relaxed text-muted-foreground shadow-soft">
         <div className="flex items-center justify-between">
-          <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">System</span>
+          <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">System</span>
           <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', state.color, status?.running && 'animate-pulse')} />
         </div>
         <div className="mt-1.5 truncate text-[12px] font-medium text-foreground/90">{state.text}</div>
         <div className="mt-1 truncate text-[10px] text-muted-foreground/75">
           {status?.emby?.serverName
-            ? `EMBY · ${status.emby.serverName}`
+            ? `EMBY · ${status.emby.serverName}${status.emby.version ? ` · v${status.emby.version}` : ''}`
             : status?.emby?.configured
               ? 'EMBY · 连接异常'
               : 'EMBY · 未配置'}

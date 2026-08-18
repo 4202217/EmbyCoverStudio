@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Images, Layers, Server } from 'lucide-react';
+import { Activity, AlertTriangle, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Images, Layers, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,7 @@ import { dominantColor } from '@/lib/dominant-color';
 
 type Status = {
   running?: boolean;
+  uptime?: number;
   emby?: { connected?: boolean; configured?: boolean; serverName?: string; version?: string; error?: string };
   stats?: { targets?: number; enabled?: number; generated?: number; coversGenerated?: number; failed?: number; taskCount?: number };
   cron?: string;
@@ -96,6 +97,10 @@ export default function DashboardPage() {
         .slice(0, 8),
     [targets]
   );
+  const generated24h = useMemo(() => {
+    const cutoff = Date.now() - 24 * 3600 * 1000;
+    return tasks.filter((t) => new Date(t.ts).getTime() >= cutoff).reduce((sum, t) => sum + (t.updated || 0), 0);
+  }, [tasks]);
   const previewList = useMemo(
     () =>
       targets
@@ -149,12 +154,6 @@ export default function DashboardPage() {
     setPreviewIndex(next);
   };
 
-  const embyState = !status?.emby?.configured
-    ? { text: '未配置', color: 'bg-slate-400' }
-    : status.emby?.connected
-      ? { text: '已连接', color: 'bg-emerald-400' }
-      : { text: '连接失败', color: 'bg-red-400' };
-
   const ack = async (body: Record<string, unknown>) => {
     try {
       await api('/api/acknowledge', { method: 'POST', body: JSON.stringify(body) });
@@ -181,8 +180,8 @@ export default function DashboardPage() {
         <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-primary/12 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 right-1/3 h-56 w-56 rounded-full bg-gold/10 blur-3xl" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
-        <div className="relative flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between md:p-8">
-          <div className="min-w-0">
+        <div className="relative p-6 md:p-8">
+          <div className="max-w-2xl">
             <div className="mb-2.5 flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-gold">
               <span className="inline-block h-px w-7 bg-gold/60" />
               Cinema Wall
@@ -190,53 +189,33 @@ export default function DashboardPage() {
             <h1 className="text-balance text-3xl font-bold tracking-tight md:text-4xl">概览</h1>
             <p className="mt-2 max-w-[52ch] text-sm leading-relaxed text-muted-foreground">封面工坊运行状态一览</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <HeroChip
-              icon={<Server aria-hidden="true" className="h-3.5 w-3.5" />}
-              label="Emby 服务器"
-              value={status?.emby?.serverName || '未命名服务器'}
-              dotColor={embyState.color}
-            />
-            <HeroChip
-              icon={<CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />}
-              label="定时任务"
-              value={status?.cron || '—'}
-            />
-            <HeroChip
-              icon={<Clock3 aria-hidden="true" className="h-3.5 w-3.5" />}
-              label="下次运行"
-              value={status?.webhookPending ? 'Webhook 待执行' : status?.nextRun ? fmtTime(status.nextRun) : '等待触发'}
-            />
-          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {!loaded ? (
-          [0, 1, 2, 3, 4].map((i) => <StatTileSkeleton key={i} />)
+          [0, 1, 2, 3, 4, 5].map((i) => <StatTileSkeleton key={i} />)
         ) : (
           <>
-            <StatTile
-              icon={Server}
-              label="Emby 服务器"
-              value={status?.emby?.serverName || '未命名服务器'}
-              sub={status?.emby?.version ? `v${status.emby.version}` : status?.emby?.configured ? '已配置' : '未配置'}
-              dot
-              dotColor={embyState.color}
-              delay={0}
-            />
             <StatTile
               icon={Layers}
               label="监控合集"
               value={`${status?.stats?.enabled ?? 0} / ${status?.stats?.targets ?? 0}`}
               sub={`已生成封面 ${status?.stats?.generated ?? 0} 个`}
-              delay={40}
+              delay={0}
             />
             <StatTile
               icon={Images}
               label="生成封面"
               value={status?.stats?.coversGenerated ?? 0}
               sub="累计生成（含重新生成）"
+              delay={40}
+            />
+            <StatTile
+              icon={Activity}
+              label="近 24 小时"
+              value={generated24h}
+              sub="生成封面（含重新生成）"
               delay={80}
             />
             <StatTile
@@ -252,6 +231,17 @@ export default function DashboardPage() {
               value={status?.cron || '—'}
               sub={status?.webhookPending ? 'Webhook 待执行' : status?.nextRun ? `下次 ${fmtTime(status.nextRun)}` : '等待触发'}
               delay={160}
+            />
+            <StatTile
+              icon={Timer}
+              label="运行时长"
+              value={status?.uptime != null ? fmtDuration(status.uptime) : '—'}
+              sub={
+                status?.uptime != null
+                  ? `启动于 ${fmtTime(new Date(Date.now() - status.uptime * 1000).toISOString())}`
+                  : '服务运行状态'
+              }
+              delay={200}
             />
           </>
         )}
@@ -512,8 +502,16 @@ function RecentRow({
                     className={cn('h-full w-full object-cover transition-[opacity,transform] duration-300 ease-out group-hover:scale-[1.04]', ready[t.id] ? 'opacity-100' : 'opacity-0')}
                   />
                   {t.kind === 'collection' || !t.template || t.template === 'single' ? (
-                    <div className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/90 via-black/45 to-transparent px-1.5 py-1 text-[10px] leading-tight text-white transition-transform duration-200 ease-out hoverable:group-hover:translate-y-0">
-                      <span className="line-clamp-2">{t.posterSource || '未知来源影片'}</span>
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 via-40% to-transparent opacity-0 transition-opacity duration-200 ease-out hoverable:group-hover:opacity-100 motion-reduce:transition-none">
+                      <div className="absolute inset-x-0 bottom-0 px-2 pb-2 pt-10 text-[11px] leading-snug text-white">
+                        {t.kind === 'library' ? (
+                          <MarqueeTitle title={t.posterSource || '未知来源影片'} />
+                        ) : (
+                          <span className="line-clamp-2" title={t.posterSource || '未知来源影片'}>
+                            {t.posterSource || '未知来源影片'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -531,6 +529,62 @@ function RecentRow({
           })}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function MarqueeTitle({ title }: { title: string }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [dist, setDist] = useState(0);
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const text = textRef.current;
+    if (!wrap || !text) return;
+    const measure = () => {
+      const overflow = text.scrollWidth - (wrap.clientWidth - 16); // px-2 两侧内边距
+      setDist(overflow > 0 ? overflow : 0);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [title]);
+
+  const animate = dist > 0 && !reduced;
+
+  return (
+    <div ref={wrapRef} className="overflow-hidden">
+      <span
+        ref={textRef}
+        title={title}
+        className={cn(
+          animate
+            ? 'title-marquee block w-max whitespace-nowrap'
+            : 'block truncate'
+        )}
+        style={
+          animate
+            ? ({
+                '--marquee-dist': `${dist}px`,
+                animationDuration: `${Math.max(1, dist / 50)}s`,
+                animationDelay: '0.6s'
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {title}
+      </span>
     </div>
   );
 }
@@ -580,32 +634,15 @@ function StatTileSkeleton() {
   );
 }
 
-function HeroChip({
-  icon,
-  label,
-  value,
-  dotColor
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: React.ReactNode;
-  dotColor?: string;
-}) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 backdrop-blur-sm transition-colors duration-150 ease-out hover:border-primary/30">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
-          {label}
-          {dotColor ? <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dotColor)} /> : null}
-        </div>
-        <div className="mt-0.5 max-w-[180px] truncate font-mono text-xs font-semibold text-foreground/90">{value}</div>
-      </div>
-    </div>
-  );
+function fmtDuration(totalSeconds: number): string {
+  const d = Math.floor(totalSeconds / 86400);
+  const h = Math.floor((totalSeconds % 86400) / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  if (d > 0) return `${d} 天 ${h} 小时`;
+  if (h > 0) return `${h} 小时 ${m} 分`;
+  return `${m} 分钟`;
 }
+
 
 function RecentSkeleton({ wide }: { wide?: boolean }) {
   return (

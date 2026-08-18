@@ -164,6 +164,7 @@ export function createApi(app) {
         ok: true,
         time: new Date().toISOString(),
         version: PKG.version || '0.0.0',
+        uptime: Math.max(0, Math.round((Date.now() - (app.startedAt || Date.now())) / 1000)),
         running: s.running,
         lastRun: s.lastRun,
         lastReason: s.lastReason,

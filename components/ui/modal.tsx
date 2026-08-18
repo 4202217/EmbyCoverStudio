@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -63,7 +64,7 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  const overlay = (
     <div
       role="dialog"
       aria-modal="true"
@@ -101,4 +102,5 @@ export function Modal({
       </div>
     </div>
   );
+  return createPortal(overlay, document.body);
 }
