@@ -351,7 +351,14 @@ export default function TargetsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">封面管理</h1>
+        <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight">
+          封面管理
+          {loaded && targets.length ? (
+            <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-xs font-normal text-primary">
+              {targets.length}
+            </span>
+          ) : null}
+        </h1>
         <p className="text-sm text-muted-foreground">管理 Emby 媒体库与合集的封面生成，单选可单独配置，支持多选批量操作</p>
       </div>
 
@@ -488,8 +495,8 @@ export default function TargetsPage() {
             <Card
               key={t.id}
               className={cn(
-                'cursor-pointer p-3 transition-[border-color,background-color,box-shadow] duration-150 ease-out hover:border-primary/50',
-                isSelected && 'border-primary bg-primary/[0.04]',
+                'cursor-pointer p-3 transition-[border-color,background-color,box-shadow] duration-150 ease-out hover:border-primary/50 hover:shadow-pop',
+                isSelected && 'border-primary bg-primary/[0.04] shadow-pop ring-1 ring-primary/60',
                 t.missing && 'opacity-70'
               )}
               onClick={(e) => {
@@ -513,7 +520,7 @@ export default function TargetsPage() {
             >
               <div className="flex items-center gap-3">
                 <div
-                  className={cn('shrink-0 cursor-pointer overflow-hidden rounded-md border bg-muted/40', t.kind === 'library' ? 'h-14 w-24' : 'h-16 w-12')}
+                  className={cn('group shrink-0 cursor-pointer overflow-hidden rounded-md border bg-muted/40', t.kind === 'library' ? 'h-14 w-24' : 'h-16 w-12')}
                   title="点击预览"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -521,7 +528,13 @@ export default function TargetsPage() {
                   }}
                 >
                   {t.coverUrl ? (
-                  <img src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  <img
+                    src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110"
+                  />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <ImageIcon className="h-5 w-5 text-muted-foreground/50" />
@@ -800,8 +813,9 @@ function PickBtn({ active, disabled, onClick, children }: { active?: boolean; di
       type="button"
       disabled={disabled}
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        'cursor-pointer rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary hover:text-primary active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40',
+        'cursor-pointer rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40',
         active && 'border-primary bg-primary/10 text-primary'
       )}
     >

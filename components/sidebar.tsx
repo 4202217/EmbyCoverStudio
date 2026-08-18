@@ -16,7 +16,20 @@ const NAV = [
   { href: '/logs', label: '运行记录', icon: ScrollText }
 ];
 
-export function Sidebar({ version }: { version: string }) {
+function BrandMark({ size = 'md' }: { size?: 'sm' | 'md' }) {
+  return (
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-sky-700 text-white shadow-soft ring-1 ring-white/10',
+        size === 'md' ? 'h-9 w-9' : 'h-8 w-8'
+      )}
+    >
+      <Film aria-hidden="true" className={size === 'md' ? 'h-5 w-5' : 'h-4 w-4'} />
+    </div>
+  );
+}
+
+export function Sidebar({ version, className }: { version: string; className?: string }) {
   const pathname = usePathname();
   const [changelog, setChangelog] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -62,11 +75,9 @@ export function Sidebar({ version }: { version: string }) {
   })();
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-5 border-r bg-card/80 px-4 py-5 backdrop-blur-xl">
+    <aside className={cn('hidden w-56 shrink-0 flex-col gap-5 border-r bg-card/80 px-4 py-5 backdrop-blur-xl lg:flex', className)}>
       <div className="flex items-center gap-2.5 px-1">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-sky-700 text-white shadow-soft">
-          <Film aria-hidden="true" className="h-5 w-5" />
-        </div>
+        <BrandMark />
         <div>
           <div className="text-sm font-bold">Emby 封面工坊</div>
           <div className="text-xs text-muted-foreground">封面生成器</div>
@@ -81,24 +92,24 @@ export function Sidebar({ version }: { version: string }) {
               key={item.href}
               href={item.href}
               className={cn(
-                'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-[color,background-color,box-shadow] duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 after:absolute after:left-0 after:top-1/2 after:h-4 after:w-[3px] after:-translate-y-1/2 after:rounded-r-full after:bg-primary after:transition-opacity after:duration-150',
-                active && 'bg-primary/10 text-primary font-semibold after:opacity-100',
+                'group relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-[color,background-color,box-shadow] duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 after:absolute after:left-0 after:top-1/2 after:h-5 after:w-[3px] after:-translate-y-1/2 after:rounded-r-full after:bg-primary after:transition-opacity after:duration-150',
+                active && 'bg-primary/10 font-semibold text-primary shadow-[inset_0_1px_0_0_hsl(var(--primary)/0.12)] after:opacity-100',
                 !active && 'after:opacity-0'
               )}
             >
-              <Icon aria-hidden="true" className="h-4 w-4" />
+              <Icon aria-hidden="true" className={cn('h-4 w-4 transition-transform duration-150 ease-out', active ? 'text-primary' : 'group-hover:scale-110')} />
               {item.label}
             </Link>
           );
         })}
       </nav>
-      <div role="status" className="mt-auto overflow-hidden rounded-md border bg-card p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground shadow-soft">
+      <div role="status" className="mt-auto overflow-hidden rounded-lg border bg-card p-3 font-mono text-[11px] leading-relaxed text-muted-foreground shadow-soft">
         <div className="flex items-center justify-between">
-          <span className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground/60">System</span>
+          <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">System</span>
           <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', state.color, status?.running && 'animate-pulse')} />
         </div>
-        <div className="mt-1 truncate text-foreground/90">{state.text}</div>
-        <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">
+        <div className="mt-1.5 truncate text-[12px] font-medium text-foreground/90">{state.text}</div>
+        <div className="mt-1 truncate text-[10px] text-muted-foreground/75">
           {status?.emby?.serverName
             ? `EMBY · ${status.emby.serverName}`
             : status?.emby?.configured
@@ -106,7 +117,7 @@ export function Sidebar({ version }: { version: string }) {
               : 'EMBY · 未配置'}
         </div>
       </div>
-      <Button variant="link" className="h-auto justify-start gap-1.5 px-1 font-mono text-xs text-muted-foreground" onClick={() => setOpen(true)}>
+      <Button variant="link" className="h-auto justify-start gap-1.5 px-1 font-mono text-xs text-muted-foreground hover:text-foreground" onClick={() => setOpen(true)}>
         v{version}
         {update?.hasUpdate ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
@@ -130,6 +141,43 @@ export function Sidebar({ version }: { version: string }) {
         <div className="max-h-[60vh] overflow-auto text-xs leading-relaxed">{changelog ? <Markdown text={changelog} /> : '加载中…'}</div>
       </Modal>
     </aside>
+  );
+}
+
+export function MobileNav({ version }: { version: string }) {
+  const pathname = usePathname();
+  return (
+    <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-xl lg:hidden">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <BrandMark size="sm" />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold leading-tight">Emby 封面工坊</div>
+            <div className="truncate font-mono text-[10px] text-muted-foreground">v{version}</div>
+          </div>
+        </div>
+      </div>
+      <nav aria-label="主导航" className="scrollbar-none flex gap-1 overflow-x-auto px-3 pb-2">
+        {NAV.map((item) => {
+          const active = pathname === item.href;
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70',
+                active ? 'bg-primary/10 text-primary' : 'hover:bg-accent hover:text-accent-foreground'
+              )}
+            >
+              <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </header>
   );
 }
 

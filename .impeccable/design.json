@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-18T00:20:00.000Z",
+  "title": "Design System: Emby 封面工坊",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "屏幕青",
+        "canonical": "hsl(194 100% 43%)",
+        "tonalRamp": ["oklch(0.22 0.10 215)", "oklch(0.32 0.12 215)", "oklch(0.42 0.14 215)", "oklch(0.52 0.15 215)", "oklch(0.62 0.15 215)", "oklch(0.72 0.12 215)", "oklch(0.82 0.09 215)", "oklch(0.92 0.04 215)"]
+      },
+      "primary-foreground": {
+        "role": "neutral",
+        "displayName": "主按钮文字",
+        "canonical": "hsl(0 0% 100%)",
+        "tonalRamp": ["oklch(0.45 0 0)", "oklch(0.55 0 0)", "oklch(0.65 0 0)", "oklch(0.75 0 0)", "oklch(0.85 0 0)", "oklch(0.92 0 0)", "oklch(0.96 0 0)", "oklch(1 0 0)"]
+      },
+      "gold": {
+        "role": "secondary",
+        "displayName": "放映机金",
+        "canonical": "hsl(42 96% 56%)",
+        "tonalRamp": ["oklch(0.28 0.09 85)", "oklch(0.38 0.11 85)", "oklch(0.48 0.13 85)", "oklch(0.58 0.15 85)", "oklch(0.68 0.16 85)", "oklch(0.78 0.13 85)", "oklch(0.87 0.09 85)", "oklch(0.95 0.04 85)"]
+      },
+      "background": {
+        "role": "neutral",
+        "displayName": "放映厅夜色",
+        "canonical": "hsl(222 30% 9%)",
+        "tonalRamp": ["oklch(0.10 0.02 245)", "oklch(0.15 0.03 245)", "oklch(0.20 0.04 245)", "oklch(0.26 0.04 245)", "oklch(0.33 0.04 245)", "oklch(0.42 0.04 245)", "oklch(0.55 0.03 245)", "oklch(0.70 0.02 245)"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "卡片表面",
+        "canonical": "hsl(219 33% 13%)",
+        "tonalRamp": ["oklch(0.14 0.03 250)", "oklch(0.19 0.04 250)", "oklch(0.25 0.04 250)", "oklch(0.32 0.04 250)", "oklch(0.40 0.04 250)", "oklch(0.50 0.04 250)", "oklch(0.62 0.03 250)", "oklch(0.78 0.02 250)"]
+      },
+      "surface-raised": {
+        "role": "neutral",
+        "displayName": "抬升表面",
+        "canonical": "hsl(219 26% 22%)",
+        "tonalRamp": ["oklch(0.18 0.04 250)", "oklch(0.24 0.04 250)", "oklch(0.30 0.04 250)", "oklch(0.37 0.04 250)", "oklch(0.45 0.04 250)", "oklch(0.55 0.04 250)", "oklch(0.67 0.03 250)", "oklch(0.80 0.02 250)"]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "正文前景",
+        "canonical": "hsl(216 40% 94%)",
+        "tonalRamp": ["oklch(0.70 0.03 250)", "oklch(0.76 0.03 250)", "oklch(0.82 0.03 250)", "oklch(0.87 0.02 250)", "oklch(0.91 0.02 250)", "oklch(0.94 0.02 250)", "oklch(0.96 0.01 250)", "oklch(0.98 0.005 250)"]
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "弱化前景",
+        "canonical": "hsl(215 25% 65%)",
+        "tonalRamp": ["oklch(0.45 0.03 245)", "oklch(0.52 0.03 245)", "oklch(0.58 0.03 245)", "oklch(0.64 0.03 245)", "oklch(0.70 0.02 245)", "oklch(0.76 0.02 245)", "oklch(0.83 0.02 245)", "oklch(0.90 0.01 245)"]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "描边",
+        "canonical": "hsl(218 28% 24%)",
+        "tonalRamp": ["oklch(0.20 0.03 245)", "oklch(0.25 0.03 245)", "oklch(0.30 0.03 245)", "oklch(0.35 0.03 245)", "oklch(0.42 0.03 245)", "oklch(0.50 0.02 245)", "oklch(0.60 0.02 245)", "oklch(0.72 0.01 245)"]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "危险红",
+        "canonical": "hsl(6 78% 57%)",
+        "tonalRamp": ["oklch(0.30 0.13 25)", "oklch(0.38 0.15 25)", "oklch(0.46 0.17 25)", "oklch(0.54 0.19 25)", "oklch(0.62 0.19 25)", "oklch(0.70 0.16 25)", "oklch(0.80 0.11 25)", "oklch(0.90 0.05 25)"]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "成功绿",
+        "canonical": "#34d399",
+        "tonalRamp": ["oklch(0.30 0.10 150)", "oklch(0.40 0.12 150)", "oklch(0.50 0.13 150)", "oklch(0.60 0.14 150)", "oklch(0.70 0.13 150)", "oklch(0.79 0.11 150)", "oklch(0.87 0.08 150)", "oklch(0.95 0.03 150)"]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "警示琥珀",
+        "canonical": "#fbbf24",
+        "tonalRamp": ["oklch(0.30 0.10 80)", "oklch(0.40 0.12 80)", "oklch(0.50 0.13 80)", "oklch(0.60 0.14 80)", "oklch(0.70 0.13 80)", "oklch(0.79 0.11 80)", "oklch(0.87 0.08 80)", "oklch(0.95 0.04 80)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "页面级标题（概览/封面管理/设置/运行记录），全页最大字号，text-balance。" },
+      "title": { "displayName": "Title", "purpose": "卡片标题，小但重，靠留白与描边分层。" },
+      "body": { "displayName": "Body", "purpose": "正文与次级说明，描述性文字不超过 52–65 字符行宽。" },
+      "label": { "displayName": "Label", "purpose": "表单标签与按钮文字；大写 + 0.18em 字距仅用于 9–10px 品牌语境。" },
+      "mono": { "displayName": "Mono", "purpose": "指标值、时间戳、进度、cron 与版本号；全局 tabular-nums。" }
+    },
+    "shadows": [
+      { "name": "soft", "value": "0 1px 2px 0 rgb(0 0 0 / 0.25), 0 10px 28px -12px rgb(0 0 0 / 0.45)", "purpose": "卡片静止阴影。" },
+      { "name": "pop", "value": "0 16px 40px -12px rgb(0 0 0 / 0.55)", "purpose": "hover、选中、弹窗的抬升阴影。" },
+      { "name": "button-glow", "value": "inset 0 1px 0 0 rgb(255 255 255 / 0.12), 0 4px 16px -6px hsl(194 100% 43% / 0.65)", "purpose": "主按钮的受光面与青色辉光。" },
+      { "name": "cover-glow", "value": "0 0 0 1px <dominant-color at 33%>, 0 0 18px 2px <dominant-color at 55%>, 0 0 44px 10px <dominant-color at 28%>", "purpose": "封面墙光晕，颜色取自每张海报的支配色；亮度低于 0.32 时回退为青色。" }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "全局状态过渡的指数缓出。" },
+      { "name": "duration-fast", "value": "150ms", "purpose": "hover、按压、颜色/边框过渡。" },
+      { "name": "duration-med", "value": "200-300ms", "purpose": "图片缩放、光晕、滑入标签。" },
+      { "name": "fade-up", "value": "0.55s cubic-bezier(0.23, 1, 0.32, 1) both", "purpose": "指标卡首次加载的渐入序列，40ms 步进；prefers-reduced-motion 时禁用。" }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "主操作按钮：青色渐变、白字、顶部受光；hover 提亮，按压缩放 0.97。",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">更新封面</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border:none;border-radius:8px;background:linear-gradient(180deg,hsl(194 100% 48%),hsl(194 100% 43%));color:#fff;font-size:14px;font-weight:500;cursor:pointer;box-shadow:inset 0 1px 0 0 rgb(255 255 255 / 0.12),0 4px 16px -6px hsl(194 100% 43% / 0.65);transition:background 150ms ease-out,transform 150ms ease-out,box-shadow 150ms ease-out}.ds-btn-primary:hover{background:linear-gradient(180deg,hsl(194 100% 52%),hsl(194 100% 46%))}.ds-btn-primary:active{transform:scale(0.97)}.ds-btn-primary:focus-visible{outline:2px solid hsl(194 100% 43% / 0.7);outline-offset:2px}.ds-btn-primary:disabled{opacity:0.5;pointer-events:none}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "次级按钮：透明底 + 1px 描边，hover 上抬升表面。",
+      "html": "<button class=\"ds-btn-outline\" type=\"button\">取消</button>",
+      "css": ".ds-btn-outline{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border:1px solid hsl(218 28% 24%);border-radius:8px;background:transparent;color:hsl(216 40% 94%);font-size:14px;font-weight:500;cursor:pointer;transition:background 150ms ease-out,color 150ms ease-out,transform 150ms ease-out}.ds-btn-outline:hover{background:hsl(219 26% 22%)}.ds-btn-outline:active{transform:scale(0.97)}.ds-btn-outline:focus-visible{outline:2px solid hsl(194 100% 43% / 0.7);outline-offset:2px}.ds-btn-outline:disabled{opacity:0.5;pointer-events:none}"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "破坏性操作按钮：危险红底白字，仅用于删除/覆盖/取消任务。",
+      "html": "<button class=\"ds-btn-destructive\" type=\"button\">取消</button>",
+      "css": ".ds-btn-destructive{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border:none;border-radius:8px;background:hsl(6 78% 57%);color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:background 150ms ease-out,transform 150ms ease-out}.ds-btn-destructive:hover{background:hsl(6 78% 62%)}.ds-btn-destructive:active{transform:scale(0.97)}.ds-btn-destructive:focus-visible{outline:2px solid hsl(6 78% 57% / 0.7);outline-offset:2px}.ds-btn-destructive:disabled{opacity:0.5;pointer-events:none}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "表单输入：透明底 + 1px 描边 + 8px 圆角；聚焦时青色焦点环与光标。",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"http://192.168.1.100:8096\" />",
+      "css": ".ds-input{height:36px;width:100%;padding:0 12px;border:1px solid hsl(218 28% 24%);border-radius:8px;background:transparent;color:hsl(216 40% 94%);font-size:14px;caret-color:hsl(194 100% 43%);transition:border-color 150ms ease-out,box-shadow 150ms ease-out}.ds-input::placeholder{color:hsl(215 25% 65%)}.ds-input:hover{border-color:hsl(194 100% 43% / 0.5)}.ds-input:focus{outline:none;border-color:hsl(194 100% 43% / 0.5);box-shadow:0 0 0 2px hsl(194 100% 43% / 0.7)}.ds-input:disabled{opacity:0.5;cursor:not-allowed}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "内容容器：卡片表面 + 1px 描边 + 10px 圆角，静止 soft 阴影。",
+      "html": "<div class=\"ds-card\"><strong>需要关注</strong><p style=\"margin:8px 0 0;font-size:13px;color:hsl(215 25% 65%)\">全部正常，无需关注</p></div>",
+      "css": ".ds-card{background:hsl(219 33% 13%);border:1px solid hsl(218 28% 24%);border-radius:10px;padding:24px;color:hsl(216 40% 94%);font-size:14px;box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.25),0 10px 28px -12px rgb(0 0 0 / 0.45)}.ds-card--elevated{box-shadow:0 16px 40px -12px rgb(0 0 0 / 0.55)}.ds-card--interactive{transition:border-color 150ms ease-out,box-shadow 150ms ease-out;cursor:pointer}.ds-card--interactive:hover{border-color:hsl(194 100% 43% / 0.5);box-shadow:0 16px 40px -12px rgb(0 0 0 / 0.55)}"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "状态/分类胶囊：全圆角，默认抬升表面，语义色用 15% 淡底 + 亮色文字。",
+      "html": "<span class=\"ds-chip ds-chip--success\">成功</span><span class=\"ds-chip ds-chip--warning\" style=\"margin-left:8px\">已暂停</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;border-radius:9999px;padding:2px 8px;font-size:12px;font-weight:600;background:hsl(219 26% 22%);color:hsl(216 40% 94%);white-space:nowrap}.ds-chip--success{background:rgb(52 211 153 / 0.15);color:#34d399}.ds-chip--warning{background:rgb(251 191 36 / 0.15);color:#fbbf24}.ds-chip--danger{background:hsl(6 78% 57% / 0.15);color:hsl(6 78% 65%)}"
+    },
+    {
+      "name": "Switch",
+      "kind": "custom",
+      "refersTo": "switch",
+      "description": "开关：36x20 胶囊轨道，选中时转青色，白色 16px 圆钮平移。",
+      "html": "<div class=\"ds-switch\" role=\"switch\" aria-checked=\"true\" tabindex=\"0\"><span class=\"ds-switch__thumb\"></span></div>",
+      "css": ".ds-switch{position:relative;display:inline-block;width:36px;height:20px;border-radius:9999px;background:hsl(219 26% 22%);cursor:pointer;transition:background 200ms ease-out}.ds-switch[aria-checked=\"true\"]{background:hsl(194 100% 43%)}.ds-switch__thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgb(0 0 0 / 0.4);transition:transform 200ms ease-out}.ds-switch[aria-checked=\"true\"] .ds-switch__thumb{transform:translateX(16px)}.ds-switch:focus-visible{outline:2px solid hsl(194 100% 43% / 0.7);outline-offset:2px}"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "侧边栏导航：8px 圆角；活跃态为青色淡底 + 青色文字 + 3px 左侧竖条。",
+      "html": "<nav style=\"width:224px;background:hsl(219 33% 13% / 0.8)\"><a class=\"ds-nav\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/></svg>概览</a><a class=\"ds-nav\" aria-current=\"page\" href=\"#\" style=\"margin-top:4px\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/></svg>封面管理</a></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;color:hsl(215 25% 65%);font-size:14px;text-decoration:none;position:relative;transition:background 150ms ease-out,color 150ms ease-out}.ds-nav:hover{background:hsl(219 26% 22%);color:hsl(216 40% 94%)}.ds-nav[aria-current=\"page\"]{background:hsl(194 100% 43% / 0.10);color:hsl(194 100% 43%);font-weight:600;box-shadow:inset 3px 0 0 hsl(194 100% 43%)}.ds-nav:focus-visible{outline:2px solid hsl(194 100% 43% / 0.7);outline-offset:2px}"
+    },
+    {
+      "name": "Poster Card",
+      "kind": "custom",
+      "refersTo": "poster-card",
+      "description": "封面墙卡片：真实海报 + 主色光晕；hover 缩放 1.04、来源影片标签滑入。",
+      "html": "<figure class=\"ds-poster\"><img src=\"https://picsum.photos/seed/cinema/320/180\" alt=\"\" /><figcaption>来源影片</figcaption></figure>",
+      "css": ".ds-poster{position:relative;width:144px;aspect-ratio:16/9;border-radius:10px;overflow:hidden;border:1px solid hsl(194 100% 43% / 0.33);background:hsl(219 33% 13%);cursor:pointer;box-shadow:0 10px 30px -14px hsl(194 100% 43% / 0.8);transition:transform 300ms ease-out,border-color 300ms ease-out,box-shadow 300ms ease-out}.ds-poster img{width:100%;height:100%;object-fit:cover;transition:transform 300ms ease-out}.ds-poster:hover{transform:scale(1.04);border-color:hsl(194 100% 43% / 0.45);box-shadow:0 16px 40px -12px rgb(0 0 0 / 0.55)}.ds-poster:hover img{transform:scale(1.04)}.ds-poster figcaption{position:absolute;left:0;right:0;bottom:0;padding:4px 6px;font-size:10px;line-height:1.2;color:#fff;background:linear-gradient(180deg,transparent,rgb(0 0 0 / 0.9));transform:translateY(100%);transition:transform 200ms ease-out}.ds-poster:hover figcaption{transform:translateY(0)}"
+    },
+    {
+      "name": "Stat Tile",
+      "kind": "custom",
+      "refersTo": "stat-tile",
+      "description": "指标卡：10px 大写等宽标签 + 20px 粗体等宽数值 + 11px 弱化说明。",
+      "html": "<div class=\"ds-stat\"><div class=\"ds-stat__label\">生成封面</div><div class=\"ds-stat__value\">128</div><div class=\"ds-stat__sub\">累计（含重新生成）</div></div>",
+      "css": ".ds-stat{border-radius:8px;border:1px solid hsl(218 28% 24%);background:hsl(219 33% 13%);padding:16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.25),0 10px 28px -12px rgb(0 0 0 / 0.45);transition:border-color 200ms ease-out,box-shadow 200ms ease-out}.ds-stat:hover{border-color:hsl(194 100% 43% / 0.3);box-shadow:0 16px 40px -12px rgb(0 0 0 / 0.55)}.ds-stat__label{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:500;letter-spacing:0.18em;text-transform:uppercase;color:hsl(215 25% 65% / 0.8)}.ds-stat__value{margin-top:8px;font-size:20px;font-weight:600;letter-spacing:-0.01em;color:hsl(216 40% 94%)}.ds-stat__sub{margin-top:2px;font-size:11px;color:hsl(215 25% 65% / 0.8)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Cinema Wall",
+    "overview": "Emby 封面工坊是一个暗色、影院感的操作控制台：深夜放映厅式的深蓝黑底、屏幕荧光般的主操作色、放映机暖金点缀，以及一整面由真实海报构成的作品墙。界面首先让“正在发生什么”一目了然（连接状态、同步进度、异常计数、最近生成），然后才展开操作（筛选、配置、批量更新）。密度是适中的控制台密度：指标用等宽数字说话，表格保持紧凑，封面永远让位于真实海报而非占位装饰。\n\n动效遵循放映机而非舞台剧的节奏：克制的缓入、hover 时轻抬起的深度、封面微缩放，全部尊重 prefers-reduced-motion。视觉上拒绝“廉价标签”（Attention、Poster Wall 这类英文小标）、拒绝装饰性彩色光斑、拒绝为“技术感”而堆叠的等宽字——等宽只用于数据、时间戳与测量。",
+    "keyCharacteristics": [
+      "深夜放映厅底色 + 单一青色交互能量 + 金色品牌时刻",
+      "封面墙以真实海报为视觉主角，光晕取自每张海报的主色",
+      "等宽数字承载指标与时间，中文字体承载内容",
+      "表面静止时扁平，状态变化（hover / 选中 / 弹窗）时才升起阴影",
+      "动效克制、指数缓出、尊重减少动态偏好"
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "青色是唯一交互强调色，金色只属于品牌时刻，语义色只承载状态。任何页面不得为装饰引入第二个强调色相。", "section": "colors" },
+      { "name": "The Tinted State Rule", "body": "状态色一律以淡色调（10%–15% 透明背景 + 亮色文字）呈现，绝不使用全饱和实心色块表达状态。", "section": "colors" },
+      { "name": "The Headline Carries Weight Rule", "body": "页面标题是页面上最大、最重的文字，任何章节不得与之竞争；章节标题不加英文小标（Attention、Poster Wall 等），标题自己承担语义。", "section": "typography" },
+      { "name": "The Mono Discipline Rule", "body": "等宽字只用于数据、时间、测量与品牌语；正文、按钮、说明文案一律使用中文正文栈。", "section": "typography" },
+      { "name": "The Flat-at-Rest Rule", "body": "静止时只有描边没有阴影；阴影是 hover、选中、弹窗等状态变化的信号，不得常驻。", "section": "elevation" },
+      { "name": "The Light-Source Rule", "body": "封面光晕必须取自该海报的支配色，禁止给封面任意叠加彩色辉光。", "section": "elevation" },
+      { "name": "The Shape Consistency Rule", "body": "容器与控件只在 6–12px 圆角家族内取值；全圆角只属于徽章、状态点与小开关。", "section": "shapes" }
+    ],
+    "dos": [
+      "Do 用青色表达一切可交互的东西：主按钮、激活项、链接、焦点环、进度。",
+      "Do 让封面光晕取自每张海报的支配色，这是封面墙的灵魂。",
+      "Do 用等宽字承载指标、时间戳、cron 与版本号，保持 tabular-nums。",
+      "Do 让章节间距保持 24px，用留白而不是更多卡片来分组。",
+      "Do 给所有动效提供 prefers-reduced-motion 降级。",
+      "Do 保持按钮文字与背景的 WCAG AA 对比，禁用态至少 50% 透明度可辨识。"
+    ],
+    "donts": [
+      "Don't 为装饰引入第二个强调色相；金色只属于 hero 品牌线。",
+      "Don't 在章节标题上加大写英文小标（Attention / Poster Wall / System 之类），标题自己说话。",
+      "Don't 在图片上叠加装饰性文字标签；海报来源信息只在 hover 时滑入。",
+      "Don't 使用渐变文字、彩色边框发光或纯黑硬阴影。",
+      "Don't 给弹窗做没有焦点陷阱与 Esc 的实现。",
+      "Don't 把弱化前景（muted-foreground）降低透明度到 AA 对比以下，尤其 10px 级小字。"
+    ]
+  }
+}

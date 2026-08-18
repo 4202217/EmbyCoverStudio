@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Sidebar } from '@/components/sidebar';
+import { MobileNav, Sidebar } from '@/components/sidebar';
 import { ToastProvider } from '@/components/toast-provider';
 import { TokenPrompt } from '@/components/token-prompt';
 import pkg from '../package.json';
@@ -17,7 +17,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ToastProvider>
           <div className="flex min-h-screen">
             <Sidebar version={pkg.version} />
-            <main className="mx-auto w-full min-w-0 max-w-[1160px] flex-1 p-8">{children}</main>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <MobileNav version={pkg.version} />
+              <main className="mx-auto w-full min-w-0 max-w-[1200px] flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+            </div>
           </div>
           <TokenPrompt />
         </ToastProvider>

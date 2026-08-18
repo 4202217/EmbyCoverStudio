@@ -148,7 +148,7 @@ export function DataTable<T extends { [k: string]: any }>({
 
   return (
     <div>
-      <div ref={scrollRef} className="relative max-h-[420px] overflow-auto rounded-md border">
+      <div ref={scrollRef} aria-busy={rows === null || loading} className="relative max-h-[420px] overflow-auto rounded-lg border">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-card/90 shadow-[0_1px_0_0_hsl(var(--border))] backdrop-blur-sm">
             <TableRow>
@@ -204,17 +204,28 @@ export function DataTable<T extends { [k: string]: any }>({
           </TableHeader>
           <TableBody>
             {rows === null ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="py-6 text-center text-sm text-muted-foreground">
-                  加载中…
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i} className="hover:bg-transparent">
+                  {columns.map((c) => (
+                    <TableCell key={c.key} className="py-3">
+                      <div className="h-3.5 w-full max-w-[140px] animate-pulse rounded bg-muted/60" style={{ opacity: 1 - i * 0.12 }} />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : visible.length ? (
-              visible.map((r, i) => <TableRow key={i}>{columns.map((c) => <TableCell key={c.key} className="align-middle">{c.render(r)}</TableCell>)}</TableRow>)
+              visible.map((r, i) => (
+                <TableRow key={i} className="transition-colors duration-150 ease-out">
+                  {columns.map((c) => <TableCell key={c.key} className="align-middle">{c.render(r)}</TableCell>)}
+                </TableRow>
+              ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="py-6 text-center text-sm text-muted-foreground">
-                  {emptyText}
+                <TableCell colSpan={columns.length} className="py-10 text-center">
+                  <div className="mx-auto flex w-fit flex-col items-center gap-1.5 text-sm text-muted-foreground">
+                    <ArrowUpDown aria-hidden="true" className="h-5 w-5 text-muted-foreground/40" />
+                    {emptyText}
+                  </div>
                 </TableCell>
               </TableRow>
             )}

@@ -114,7 +114,16 @@ export default function SettingsPage() {
     load();
   }, []);
 
-  if (!s || !draft) return <div className="text-sm text-muted-foreground">加载中…</div>;
+  if (!s || !draft) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+          <span className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+          加载设置中…
+        </div>
+      </div>
+    );
+  }
 
   const save = async (patch: Record<string, unknown>) => {
     try {
@@ -362,8 +371,9 @@ export default function SettingsPage() {
                 {['added', 'premiere', 'random'].map((p) => (
                   <button
                     key={p}
+                    aria-pressed={curPick === p}
                     className={cn(
-                      'rounded-md border px-2.5 py-1 text-xs transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.97]',
+                      'cursor-pointer rounded-md border px-2.5 py-1 text-xs transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 active:scale-[0.97]',
                       curPick === p ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'
                     )}
                     onClick={() => setDraft({ ...draft, defaultPickByByStyle: { ...(draft.defaultPickByByStyle || {}), [group]: p } })}
@@ -379,8 +389,9 @@ export default function SettingsPage() {
                 {['gradient', 'poster'].map((b) => (
                   <button
                     key={b}
+                    aria-pressed={(cur.backgroundMode || 'gradient') === b}
                     className={cn(
-                      'rounded-md border px-2.5 py-1 text-xs transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.97]',
+                      'cursor-pointer rounded-md border px-2.5 py-1 text-xs transition-[color,border-color,background-color,transform] duration-150 ease-out hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 active:scale-[0.97]',
                       (cur.backgroundMode || 'gradient') === b ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'
                     )}
                     onClick={() => setGroupDraft({ backgroundMode: b })}

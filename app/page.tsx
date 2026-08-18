@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Images } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Images, Layers, Server } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -176,17 +177,36 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-card via-card/85 to-card/40 p-6 shadow-soft">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-primary/15 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 right-40 h-48 w-48 rounded-full bg-gold/10 blur-3xl" />
-        <div className="relative">
-          <div>
-            <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-gold">
-              <span className="inline-block h-px w-6 bg-gold/60" />
+      <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-card via-card/85 to-card/45 shadow-soft">
+        <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-primary/12 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 right-1/3 h-56 w-56 rounded-full bg-gold/10 blur-3xl" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
+        <div className="relative flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between md:p-8">
+          <div className="min-w-0">
+            <div className="mb-2.5 flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-gold">
+              <span className="inline-block h-px w-7 bg-gold/60" />
               Cinema Wall
             </div>
-            <h1 className="text-2xl font-bold">概览</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">封面工坊运行状态一览</p>
+            <h1 className="text-balance text-3xl font-bold tracking-tight md:text-4xl">概览</h1>
+            <p className="mt-2 max-w-[52ch] text-sm leading-relaxed text-muted-foreground">封面工坊运行状态一览</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeroChip
+              icon={<Server aria-hidden="true" className="h-3.5 w-3.5" />}
+              label="Emby 服务器"
+              value={status?.emby?.serverName || '未命名服务器'}
+              dotColor={embyState.color}
+            />
+            <HeroChip
+              icon={<CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />}
+              label="定时任务"
+              value={status?.cron || '—'}
+            />
+            <HeroChip
+              icon={<Clock3 aria-hidden="true" className="h-3.5 w-3.5" />}
+              label="下次运行"
+              value={status?.webhookPending ? 'Webhook 待执行' : status?.nextRun ? fmtTime(status.nextRun) : '等待触发'}
+            />
           </div>
         </div>
       </div>
@@ -197,27 +217,41 @@ export default function DashboardPage() {
         ) : (
           <>
             <StatTile
+              icon={Server}
               label="Emby 服务器"
               value={status?.emby?.serverName || '未命名服务器'}
               sub={status?.emby?.version ? `v${status.emby.version}` : status?.emby?.configured ? '已配置' : '未配置'}
               dot
               dotColor={embyState.color}
+              delay={0}
             />
             <StatTile
+              icon={Layers}
               label="监控合集"
               value={`${status?.stats?.enabled ?? 0} / ${status?.stats?.targets ?? 0}`}
               sub={`已生成封面 ${status?.stats?.generated ?? 0} 个`}
+              delay={40}
             />
-            <StatTile label="生成封面" value={status?.stats?.coversGenerated ?? 0} sub="累计生成（含重新生成）" />
             <StatTile
+              icon={Images}
+              label="生成封面"
+              value={status?.stats?.coversGenerated ?? 0}
+              sub="累计生成（含重新生成）"
+              delay={80}
+            />
+            <StatTile
+              icon={Clock3}
               label="最近同步"
               value={fmtTime(status?.lastRun)}
               sub={status?.lastError ? '有错误，请关注' : status?.lastReason || '等待首次同步'}
+              delay={120}
             />
             <StatTile
+              icon={CalendarClock}
               label="定时任务"
               value={status?.cron || '—'}
               sub={status?.webhookPending ? 'Webhook 待执行' : status?.nextRun ? `下次 ${fmtTime(status.nextRun)}` : '等待触发'}
+              delay={160}
             />
           </>
         )}
@@ -235,7 +269,11 @@ export default function DashboardPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>需要关注</CardTitle>
-          <span className="rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-gold">Attention</span>
+          {failedTargets.length || failedTasks.length ? (
+            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 font-mono text-[10px] font-medium text-red-400">
+              {failedTargets.length + failedTasks.length} 项
+            </span>
+          ) : null}
         </CardHeader>
         <CardContent>
           {failedTargets.length || failedTasks.length ? (
@@ -245,7 +283,8 @@ export default function DashboardPage() {
                   <div className="mb-2 text-xs font-semibold text-muted-foreground">封面生成异常（{failedTargets.length}）</div>
                   <div className="space-y-2">
                     {failedTargets.map((t) => (
-                      <div key={t.id} className="flex items-center gap-3 rounded-md border bg-muted/30 p-2.5">
+                      <div key={t.id} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-2.5 transition-colors duration-150 ease-out hover:bg-muted/50">
+                        <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-red-400" />
                         <span className="shrink-0 text-sm font-semibold">{t.name}</span>
                         <Badge variant="secondary">{t.kind === 'library' ? '媒体库' : '合集'}</Badge>
                         <span className="min-w-0 flex-1 break-words text-xs text-red-400">
@@ -267,7 +306,8 @@ export default function DashboardPage() {
                   <div className="mb-2 text-xs font-semibold text-muted-foreground">最近失败任务（{failedTasks.length}）</div>
                   <div className="space-y-2">
                     {failedTasks.map((t) => (
-                      <div key={t.seq} className="flex items-center gap-3 rounded-md border bg-muted/30 p-2.5">
+                      <div key={t.seq} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-2.5 transition-colors duration-150 ease-out hover:bg-muted/50">
+                        <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-red-400" />
                         <span className="shrink-0 text-sm font-semibold">{t.name}</span>
                         <span className="text-xs text-muted-foreground">{fmtTime(t.ts)}</span>
                         <span className="min-w-0 flex-1 break-words text-xs text-red-400">
@@ -283,18 +323,26 @@ export default function DashboardPage() {
               ) : null}
             </div>
           ) : (
-            <div className="flex items-center gap-2 py-2 text-sm text-emerald-400">
-              <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-              全部正常，无需关注
-            </div>
-          )}
-        </CardContent>
+          <div className="flex items-center gap-2 py-2 text-sm text-emerald-400">
+            <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+            全部正常，无需关注
+          </div>
+        )}
+      </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>最近生成</CardTitle>
-          <span className="rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-gold">Poster Wall</span>
+          {recentLibs.length || recentCols.length ? (
+            <Link
+              href="/targets"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            >
+              全部封面
+              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+            </Link>
+          ) : null}
         </CardHeader>
         <CardContent>
           {!loaded ? (
@@ -448,7 +496,7 @@ function RecentRow({
               <div key={t.id} className={cn('group shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')} onClick={() => onPreview(t)}>
                 <div
                   className={cn(
-                    'relative overflow-hidden rounded-lg border bg-muted/40 transition-[border-color,box-shadow] duration-200 ease-out',
+                    'relative overflow-hidden rounded-lg border bg-muted/40 transition-[border-color,box-shadow,transform] duration-300 ease-out group-hover:border-primary/45 group-hover:shadow-pop',
                     wide ? 'aspect-video' : 'aspect-[9/16]',
                     !ready[t.id] && 'animate-pulse'
                   )}
@@ -457,9 +505,11 @@ function RecentRow({
                   <img
                     src={t.coverUrl}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     onLoad={() => setReady((p) => ({ ...p, [t.id]: true }))}
                     onError={() => setReady((p) => ({ ...p, [t.id]: true }))}
-                    className={cn('h-full w-full object-cover transition-opacity duration-300 ease-out', ready[t.id] ? 'opacity-100' : 'opacity-0')}
+                    className={cn('h-full w-full object-cover transition-[opacity,transform] duration-300 ease-out group-hover:scale-[1.04]', ready[t.id] ? 'opacity-100' : 'opacity-0')}
                   />
                   {t.kind === 'collection' || !t.template || t.template === 'single' ? (
                     <div className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/90 via-black/45 to-transparent px-1.5 py-1 text-[10px] leading-tight text-white transition-transform duration-200 ease-out hoverable:group-hover:translate-y-0">
@@ -475,7 +525,7 @@ function RecentRow({
                   </div>
                 ) : null}
                 <div className="mt-0.5 truncate text-xs">{t.name}</div>
-                <div className="text-[11px] text-muted-foreground">{fmtTime(t.lastGeneratedAt)}</div>
+                <div className="text-[11px] text-muted-foreground/80">{fmtTime(t.lastGeneratedAt)}</div>
               </div>
             );
           })}
@@ -490,32 +540,69 @@ function StatTile({
   value,
   sub,
   dot,
-  dotColor
+  dotColor,
+  icon: Icon,
+  delay = 0
 }: {
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
   dot?: boolean;
   dotColor?: string;
+  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>;
+  delay?: number;
 }) {
   return (
-    <div className="rounded-md border bg-card p-3 font-mono shadow-soft">
+    <div
+      className="animate-fade-up rounded-lg border bg-card p-4 font-mono shadow-soft transition-[border-color,box-shadow,transform] duration-200 ease-out hover:border-primary/30 hover:shadow-pop"
+      style={{ animationDelay: `${delay}ms` }}
+    >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-[9px] uppercase tracking-[0.25em] text-muted-foreground/60">{label}</span>
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
+          {Icon ? <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary/75" /> : null}
+          <span className="truncate">{label}</span>
+        </span>
         {dot ? <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dotColor)} /> : null}
       </div>
-      <div className="mt-1.5 truncate text-lg font-semibold text-foreground">{value}</div>
-      <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">{sub}</div>
+      <div className="mt-2 truncate text-xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{sub}</div>
     </div>
   );
 }
 
 function StatTileSkeleton() {
   return (
-    <div className="rounded-md border bg-card p-3 font-mono shadow-soft">
+    <div className="rounded-lg border bg-card p-4 font-mono shadow-soft">
       <div className="h-2.5 w-16 animate-pulse rounded bg-muted" />
       <div className="mt-2 h-5 w-3/4 animate-pulse rounded bg-muted/70" />
       <div className="mt-1.5 h-2.5 w-1/2 animate-pulse rounded bg-muted/60" />
+    </div>
+  );
+}
+
+function HeroChip({
+  icon,
+  label,
+  value,
+  dotColor
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  dotColor?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 backdrop-blur-sm transition-colors duration-150 ease-out hover:border-primary/30">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
+          {label}
+          {dotColor ? <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dotColor)} /> : null}
+        </div>
+        <div className="mt-0.5 max-w-[180px] truncate font-mono text-xs font-semibold text-foreground/90">{value}</div>
+      </div>
     </div>
   );
 }
