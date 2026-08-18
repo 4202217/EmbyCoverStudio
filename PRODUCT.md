@@ -49,7 +49,7 @@ web
 
 - `README.md`：功能特性、快速开始、首次使用、Webhook 配置、常见问题与安全说明（已核对）。
 - `docker-compose.yml` / `Dockerfile`：镜像构建与运行方式（standalone、`/app/data` 数据目录、健康检查）。
-- `CHANGELOG.md`：版本演进记录（v1.5.x – v1.6.0，UI 迭代历史）。
+- `CHANGELOG.md`：版本演进记录（v1.5.x – v1.7.0，UI 迭代历史）。
 - `scripts/mock-emby.js` + `test-integration.js`：模拟 Emby 的端到端测试。
 - `data/`：真实运行数据（封面图、任务记录、配置）。
 - 推断标记：用户画像、定位表述、产品原则由仓库证据（README、功能实现、UI 文案、目录结构）推断得出，尚未经用户逐条确认；若与实际情况不符，请指正后更新本文件。
