@@ -62,7 +62,7 @@ export function createApi(app) {
     }
     return 0;
   }
-  function changelogSince(text, current) {
+  function parseChangelog(text) {
     const blocks = [];
     let cur = null;
     for (const line of String(text || '').split('\n')) {
@@ -73,7 +73,11 @@ export function createApi(app) {
       } else if (cur) cur.lines.push(line);
     }
     if (cur) blocks.push(cur);
-    return blocks
+    return blocks;
+  }
+
+  function changelogSince(text, current) {
+    return parseChangelog(text)
       .filter((b) => cmpVersion(b.version, current) > 0)
       .map((b) => b.lines.join('\n'))
       .join('\n\n');
@@ -108,7 +112,12 @@ export function createApi(app) {
       try {
         const [pkgText, changelogText] = await Promise.all([fetchUrl(url.pkg), fetchUrl(url.changelog)]);
         const remote = JSON.parse(pkgText);
-        const latest = String(remote.version || '').trim();
+        // CDN 缓存可能导致 package.json 与 changelog 各自滞后：以两者中较高的版本为权威，保证标题与内容一致
+        const pkgVersion = String(remote.version || '').trim();
+        const latest = parseChangelog(changelogText).reduce(
+          (best, b) => (cmpVersion(b.version, best) > 0 ? b.version : best),
+          pkgVersion || '0.0.0'
+        );
         const hasUpdate = Boolean(latest && cmpVersion(latest, current) > 0);
         updateCheckCache = {
           at: now,
