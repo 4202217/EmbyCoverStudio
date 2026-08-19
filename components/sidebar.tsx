@@ -16,6 +16,51 @@ const NAV = [
   { href: '/logs', label: '运行记录', icon: ScrollText }
 ];
 
+type Status = {
+  running?: boolean;
+  emby?: { connected?: boolean; configured?: boolean; serverName?: string; version?: string };
+  stats?: { failed?: number };
+  sync?: { status?: string; running?: boolean; total?: number; done?: number; current?: string };
+};
+
+function useSystemStatus() {
+  const [status, setStatus] = useState<Status | null>(null);
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let pendingRefresh = false;
+    const load = async () => {
+      try {
+        const s = await api<Status>('/api/status');
+        if (!alive) return;
+        setStatus(s);
+        const active = !!s.sync?.running || s.sync?.status === 'paused';
+        // 收到刷新事件后的第一轮即使还没进入运行态，也快速复查一次（2 秒），避免竞态导致延迟
+        timer = setTimeout(load, active || pendingRefresh ? 2000 : 15000);
+        pendingRefresh = false;
+      } catch {
+        if (!alive) return;
+        setStatus(null);
+        timer = setTimeout(load, 15000);
+        pendingRefresh = false;
+      }
+    };
+    const onRefresh = () => {
+      if (timer) clearTimeout(timer);
+      pendingRefresh = true;
+      load();
+    };
+    window.addEventListener('ecs:status-refresh', onRefresh);
+    load();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('ecs:status-refresh', onRefresh);
+    };
+  }, []);
+  return status;
+}
+
 function BrandMark({ size = 'md' }: { size?: 'sm' | 'md' }) {
   return (
     <div
@@ -34,23 +79,16 @@ export function Sidebar({ version, className }: { version: string; className?: s
   const [changelog, setChangelog] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [update, setUpdate] = useState<{ hasUpdate?: boolean; current?: string; latest?: string; changelog?: string } | null>(null);
-  const [status, setStatus] = useState<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string; version?: string }; stats?: { failed?: number } } | null>(null);
+  const status = useSystemStatus();
+  const failedCount = status?.stats?.failed || 0;
+  const sync = status?.sync || null;
+  const syncActive = !!sync?.running || sync?.status === 'paused';
+  const syncPct = sync?.total ? Math.round(((sync.done || 0) / sync.total) * 100) : 0;
 
   useEffect(() => {
     api<{ text: string }>('/api/changelog')
       .then((d) => setChangelog(d.text || '暂无更新记录'))
       .catch(() => setChangelog('暂无更新记录'));
-  }, []);
-
-  useEffect(() => {
-    const load = () => {
-      api<{ running?: boolean; emby?: { connected?: boolean; configured?: boolean; serverName?: string; version?: string }; stats?: { failed?: number } }>('/api/status')
-        .then(setStatus)
-        .catch(() => setStatus(null));
-    };
-    load();
-    const timer = setInterval(load, 15000);
-    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -75,7 +113,7 @@ export function Sidebar({ version, className }: { version: string; className?: s
   })();
 
   return (
-    <aside className={cn('hidden w-56 shrink-0 flex-col gap-5 border-r bg-card/80 px-4 py-5 backdrop-blur-xl lg:flex', className)}>
+    <aside className={cn('sticky top-0 hidden h-[100dvh] w-56 shrink-0 flex-col gap-5 overflow-hidden border-r bg-card/80 px-4 py-5 backdrop-blur-xl lg:flex', className)}>
       <div className="flex items-center gap-2.5 px-1">
         <BrandMark />
         <div>
@@ -83,7 +121,7 @@ export function Sidebar({ version, className }: { version: string; className?: s
           <div className="text-xs text-muted-foreground">封面生成器</div>
         </div>
       </div>
-      <nav className="flex flex-col gap-1">
+      <nav className="scrollbar-none flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {NAV.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
@@ -99,10 +137,39 @@ export function Sidebar({ version, className }: { version: string; className?: s
             >
               <Icon aria-hidden="true" className={cn('h-4 w-4 transition-transform duration-150 ease-out', active ? 'text-primary' : 'group-hover:scale-110')} />
               {item.label}
+              {item.href === '/targets' && failedCount > 0 ? (
+                <span className="ml-auto flex items-center gap-1 rounded-full bg-red-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-red-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                  {failedCount}
+                </span>
+              ) : null}
             </Link>
           );
         })}
       </nav>
+      {syncActive && sync ? (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="truncate font-medium text-foreground/90">{sync.status === 'paused' ? '已暂停' : '封面更新中'}</span>
+            <span className="shrink-0 font-mono text-muted-foreground">{syncPct}%</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              role="progressbar"
+              aria-label="封面更新进度"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={syncPct}
+              className="h-full rounded-full bg-primary film-progress transition-[width] duration-500 ease-out"
+              style={{ width: `${syncPct}%` }}
+            />
+          </div>
+          <div className="mt-1.5 truncate font-mono text-[10px] text-muted-foreground">
+            {sync.done ?? 0} / {sync.total ?? 0}
+            {sync.current ? ` · ${sync.current}` : ''}
+          </div>
+        </div>
+      ) : null}
       <div role="status" className="mt-auto overflow-hidden rounded-lg border bg-card p-3 font-mono text-[11px] leading-relaxed text-muted-foreground shadow-soft">
         <div className="flex items-center justify-between">
           <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">System</span>
@@ -146,6 +213,8 @@ export function Sidebar({ version, className }: { version: string; className?: s
 
 export function MobileNav({ version }: { version: string }) {
   const pathname = usePathname();
+  const status = useSystemStatus();
+  const failedCount = status?.stats?.failed || 0;
   return (
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -173,6 +242,12 @@ export function MobileNav({ version }: { version: string }) {
             >
               <Icon aria-hidden="true" className="h-3.5 w-3.5" />
               {item.label}
+              {item.href === '/targets' && failedCount > 0 ? (
+                <span className="ml-auto flex items-center gap-1 rounded-full bg-red-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-red-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                  {failedCount}
+                </span>
+              ) : null}
             </Link>
           );
         })}

@@ -30,7 +30,7 @@ web
 
 - 部署形态：Docker（amd64 / arm64）或 Node standalone，默认端口 3000（compose 示例常用 9308），数据持久化在 `data/`（`db.json`、`covers/`、`cache/`）。
 - 前置依赖：Emby 管理员 API 密钥；Webhook 需要 Emby 官方 Webhooks 插件；容器内置 Noto Sans CJK 字体，本地运行依赖系统中文字体。
-- 日常运维：侧边栏版本号检查 GitHub 新版本并查看 changelog；备份通过导出/导入 JSON 或 WebDAV 自动/手动同步（不含封面图片）。
+- 日常运维：侧边栏版本号检查 GitHub 新版本并查看 changelog；备份通过导出/导入 JSON（不含封面图片）。
 - 安全模型：默认不启用访问令牌，任何能访问服务端口的人都能操作；可选启用令牌保护管理界面，建议内网或反代后部署。
 
 ## Capabilities and Constraints
@@ -43,7 +43,7 @@ web
 
 - 名称：Emby 封面工坊（Emby Cover Studio），副标题「封面生成器」。
 - 界面语言：简体中文。
-- 已确立并多次迭代的视觉身份：暗色影院 / 指挥中心风格（「Cinema Wall」品牌语、青色主色 + 金色点缀、封面墙与动态取色光晕）。视觉细节固化在 `DESIGN.md`。
+- 已确立并多次迭代的视觉身份：暗色影院 / 指挥中心风格（「Cinema Wall」品牌语、青色主色 + 金色点缀、纯净封面成果墙）。视觉细节固化在 `DESIGN.md`。
 
 ## Evidence on Hand
 

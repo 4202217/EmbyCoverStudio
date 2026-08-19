@@ -9,7 +9,7 @@ import { placeholderPoster } from '../src/covers/placeholders.js';
 import { fontStatus } from '../src/covers/fonts.js';
 import { STYLES, SIZE_PRESETS, DEFAULT_SIZE_BY_KIND, isValidStyle, configStyle, isValidPickBy } from '../src/covers/styles.js';
 import { setupCron, getNextRun } from './cron.js';
-import { buildBackupData, buildWebdavBackupData, webdavPut, webdavGet } from './backup.js';
+import { buildBackupData } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
@@ -567,49 +567,6 @@ export function createApi(app) {
       return okJson({ ok: true, target: store.getTarget(target.id) });
     }
 
-    // POST /api/webdav/test
-    if (m === 'POST' && p === '/webdav/test') {
-      if (!store.settings.webdavUrl) return errJson('请先填写 WebDAV 地址');
-      try {
-        const r = await fetch(webdavUrlOf(), { method: 'GET', headers: { Authorization: webdavAuth() } });
-        if (r.status === 200 || r.status === 404) return okJson({ ok: true });
-        return errJson(`WebDAV 测试失败（HTTP ${r.status}）`);
-      } catch (e) {
-        return errJson(e.message);
-      }
-    }
-
-    // POST /api/webdav/backup
-    if (m === 'POST' && p === '/webdav/backup') {
-      try {
-        const url = await webdavPut(store.settings, buildWebdavBackupData(store));
-        store.updateSettings({ webdavLastBackup: new Date().toISOString() });
-        return okJson({ ok: true, url });
-      } catch (e) {
-        return errJson(e.message);
-      }
-    }
-
-    // POST /api/webdav/restore
-    if (m === 'POST' && p === '/webdav/restore') {
-      try {
-        const data = await webdavGet(store.settings);
-        if (!data || data.version !== 1) return errJson('WebDAV 上的备份文件格式不正确或版本不匹配');
-        const mask = data.webdavMask || { settings: true, targets: true, tasks: true };
-        store.applyBackup({
-          settings: mask.settings ? (data.settings || {}) : null,
-          targets: mask.targets ? (data.targets || []) : null,
-          tasks: mask.tasks ? (data.tasks || []) : null
-        });
-        setupCron(app);
-        embyStatusCache = { at: 0, value: null };
-        info('已从 WebDAV 恢复备份');
-        return okJson({ ok: true, importedTargets: store.listTargets().length });
-      } catch (e) {
-        return errJson(e.message);
-      }
-    }
-
     // GET /api/metrics（Prometheus 文本格式的运行指标）
     if (m === 'GET' && p === '/metrics') {
       const targets = store.listTargets();
@@ -640,17 +597,6 @@ export function createApi(app) {
     }
 
     return errJson('接口不存在', 404);
-  }
-
-  function webdavAuth() {
-    const s = store.settings;
-    return 'Basic ' + Buffer.from(`${s.webdavUser || ''}:${s.webdavPassword || ''}`).toString('base64');
-  }
-
-  function webdavUrlOf() {
-    const base = String(store.settings.webdavUrl || '').replace(/\/+$/, '');
-    const file = String(store.settings.webdavFile || 'backup.json').replace(/^\/+/, '');
-    return `${base}/${file}`;
   }
 
   return { dispatch };

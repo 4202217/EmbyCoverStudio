@@ -13,14 +13,6 @@ export function defaultSettings() {
     embyApiKey: '',
     webhookToken: randomToken(),
     accessToken: '',
-    webdavUrl: '',
-    webdavUser: '',
-    webdavPassword: '',
-    webdavFile: 'backup.json',
-    webdavAutoBackup: false,
-    webdavIntervalHours: 24,
-    webdavLastBackup: '',
-    webdavSync: { settings: true, targets: true, tasks: true },
     defaultPickByByStyle: {
       'library-single': 'added',
       'library-wall': 'added',
@@ -115,21 +107,6 @@ function sanitizeSettings(patch) {
   if ('embyApiKey' in patch) out.embyApiKey = String(patch.embyApiKey || '').trim();
   if ('webhookToken' in patch) out.webhookToken = String(patch.webhookToken || '').trim();
   if ('accessToken' in patch) out.accessToken = String(patch.accessToken || '').trim();
-  if ('webdavUrl' in patch) out.webdavUrl = String(patch.webdavUrl || '').trim();
-  if ('webdavUser' in patch) out.webdavUser = String(patch.webdavUser || '').trim();
-  if ('webdavPassword' in patch) out.webdavPassword = String(patch.webdavPassword || '').trim();
-  if ('webdavFile' in patch) out.webdavFile = String(patch.webdavFile || 'backup.json').trim() || 'backup.json';
-  if ('webdavAutoBackup' in patch) out.webdavAutoBackup = !!patch.webdavAutoBackup;
-  if ('webdavIntervalHours' in patch) out.webdavIntervalHours = clampInt(patch.webdavIntervalHours, 1, 720, 24);
-  if ('webdavLastBackup' in patch) out.webdavLastBackup = String(patch.webdavLastBackup || '').trim();
-  if ('webdavSync' in patch) {
-    const m = patch.webdavSync || {};
-    out.webdavSync = {
-      settings: m.settings !== false,
-      targets: m.targets !== false,
-      tasks: m.tasks !== false
-    };
-  }
   if ('defaultPickBy' in patch) {
     // 兼容旧字段：同时写入三套默认值
     const d = patch.defaultPickBy === 'premiere' ? 'premiere' : 'added';
@@ -224,6 +201,10 @@ export class Store {
     this.data = deepMerge(fresh, raw || {});
     // 迁移：cover / defaultPickBy 拆分为媒体库、合集各自一套
     const st = this.data.settings;
+    // 迁移：移除 WebDAV 同步功能，清理历史残留设置
+    for (const k of ['webdavUrl', 'webdavUser', 'webdavPassword', 'webdavFile', 'webdavAutoBackup', 'webdavIntervalHours', 'webdavLastBackup', 'webdavSync']) {
+      delete st[k];
+    }
     if (st.cover !== undefined) {
       const oldCover = st.cover || {};
       st.coverByKind = {
@@ -434,25 +415,6 @@ export class Store {
     }
     this.data.targets = map;
     this.data.tasks = Array.isArray(tasks) ? tasks.slice(-300) : [];
-    this.save();
-  }
-
-  // 按需应用备份中的指定部分（用于 WebDAV 部分同步）
-  applyBackup({ settings = null, targets = null, tasks = null } = {}) {
-    if (settings !== null) {
-      this.data.settings = deepMerge(defaultSettings(), sanitizeSettings(settings || {}));
-    }
-    if (targets !== null) {
-      const map = {};
-      const list = Array.isArray(targets) ? targets : Object.values(targets || {});
-      for (const t of list) {
-        if (t && t.id) map[String(t.id)] = { ...t, id: String(t.id) };
-      }
-      this.data.targets = map;
-    }
-    if (tasks !== null) {
-      this.data.tasks = Array.isArray(tasks) ? tasks.slice(-300) : [];
-    }
     this.save();
   }
 

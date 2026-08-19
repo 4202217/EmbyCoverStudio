@@ -2,16 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Activity, AlertTriangle, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Images, Layers, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, CalendarClock, ChevronLeft, ChevronRight, Clock3, Images, Layers, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Modal } from '@/components/ui/modal';
 import { api } from '@/lib/api';
-import { toast } from '@/components/toast-provider';
-import { cn, fmtTime, TRIGGER_COLOR, TRIGGER_LABEL } from '@/lib/utils';
-import { dominantColor } from '@/lib/dominant-color';
+import { cn, fmtTime } from '@/lib/utils';
 
 type Status = {
   running?: boolean;
@@ -39,6 +36,7 @@ type Target = {
   lastTrigger?: string;
   template?: string;
   posterSource?: string;
+  missing?: boolean;
 };
 
 type Task = {
@@ -58,7 +56,6 @@ export default function DashboardPage() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [previewTarget, setPreviewTarget] = useState<Target | null>(null);
-  const [colors, setColors] = useState<Record<string, string | null>>({});
   const [previewIndex, setPreviewIndex] = useState(-1);
   const [loaded, setLoaded] = useState(false);
 
@@ -81,20 +78,18 @@ export default function DashboardPage() {
 
   const failedTargets = targets.filter((t) => t.lastError && !t.acknowledged);
   const failedTasks = tasks.filter((t) => t.status === 'failed' && !t.acknowledged).slice(0, 5);
-  const recentLibs = useMemo(
+  const allLibs = useMemo(
     () =>
       [...targets]
-        .filter((t) => t.kind === 'library' && t.coverUrl && t.lastGeneratedAt)
-        .sort((a, b) => new Date(b.lastGeneratedAt!).getTime() - new Date(a.lastGeneratedAt!).getTime())
-        .slice(0, 5),
+        .filter((t) => t.kind === 'library' && !t.missing)
+        .sort((a, b) => new Date(b.lastGeneratedAt || 0).getTime() - new Date(a.lastGeneratedAt || 0).getTime()),
     [targets]
   );
-  const recentCols = useMemo(
+  const allCols = useMemo(
     () =>
       [...targets]
-        .filter((t) => t.kind === 'collection' && t.coverUrl && t.lastGeneratedAt)
-        .sort((a, b) => new Date(b.lastGeneratedAt!).getTime() - new Date(a.lastGeneratedAt!).getTime())
-        .slice(0, 8),
+        .filter((t) => t.kind === 'collection' && !t.missing)
+        .sort((a, b) => new Date(b.lastGeneratedAt || 0).getTime() - new Date(a.lastGeneratedAt || 0).getTime()),
     [targets]
   );
   const generated24h = useMemo(() => {
@@ -104,7 +99,7 @@ export default function DashboardPage() {
   const previewList = useMemo(
     () =>
       targets
-        .filter((t) => t.coverUrl)
+        .filter((t) => !t.missing)
         .sort((a, b) => new Date(b.lastGeneratedAt || 0).getTime() - new Date(a.lastGeneratedAt || 0).getTime()),
     [targets]
   );
@@ -113,20 +108,6 @@ export default function DashboardPage() {
     const timer = setInterval(load, 15000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    let alive = true;
-    for (const t of previewList) {
-      if (!t.coverUrl || colors[t.id] !== undefined) continue;
-      dominantColor(t.coverUrl).then((c) => {
-        if (alive) setColors((prev) => (prev[t.id] === c ? prev : { ...prev, [t.id]: c }));
-      });
-    }
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewList]);
 
   useEffect(() => {
     if (!previewTarget) return;
@@ -154,23 +135,12 @@ export default function DashboardPage() {
     setPreviewIndex(next);
   };
 
-  const ack = async (body: Record<string, unknown>) => {
+  const markAllRead = async () => {
     try {
-      await api('/api/acknowledge', { method: 'POST', body: JSON.stringify(body) });
-      toast('ok', '已标记为已读');
+      await api('/api/acknowledge', { method: 'POST', body: JSON.stringify({ all: true }) });
       load();
-    } catch (e: any) {
-      toast('err', e.message);
-    }
-  };
-
-  const retry = async (id: string) => {
-    try {
-      await api(`/api/targets/${id}/generate`, { method: 'POST', body: '{}' });
-      toast('ok', '已重新生成');
-      load();
-    } catch (e: any) {
-      toast('err', e.message);
+    } catch {
+      // 静默失败，下次刷新重试
     }
   };
 
@@ -256,80 +226,38 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>需要关注</CardTitle>
-          {failedTargets.length || failedTasks.length ? (
-            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 font-mono text-[10px] font-medium text-red-400">
-              {failedTargets.length + failedTasks.length} 项
-            </span>
-          ) : null}
-        </CardHeader>
-        <CardContent>
-          {failedTargets.length || failedTasks.length ? (
-            <div className="space-y-4">
-              {failedTargets.length ? (
-                <div>
-                  <div className="mb-2 text-xs font-semibold text-muted-foreground">封面生成异常（{failedTargets.length}）</div>
-                  <div className="space-y-2">
-                    {failedTargets.map((t) => (
-                      <div key={t.id} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-2.5 transition-colors duration-150 ease-out hover:bg-muted/50">
-                        <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-red-400" />
-                        <span className="shrink-0 text-sm font-semibold">{t.name}</span>
-                        <Badge variant="secondary">{t.kind === 'library' ? '媒体库' : '合集'}</Badge>
-                        <span className="min-w-0 flex-1 break-words text-xs text-red-400">
-                          {t.lastError}
-                        </span>
-                        <Button size="sm" onClick={() => retry(t.id)}>
-                          重试
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => ack({ targetId: t.id })}>
-                          已读
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {failedTasks.length ? (
-                <div>
-                  <div className="mb-2 text-xs font-semibold text-muted-foreground">最近失败任务（{failedTasks.length}）</div>
-                  <div className="space-y-2">
-                    {failedTasks.map((t) => (
-                      <div key={t.seq} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-2.5 transition-colors duration-150 ease-out hover:bg-muted/50">
-                        <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-red-400" />
-                        <span className="shrink-0 text-sm font-semibold">{t.name}</span>
-                        <span className="text-xs text-muted-foreground">{fmtTime(t.ts)}</span>
-                        <span className="min-w-0 flex-1 break-words text-xs text-red-400">
-                          {t.error || '未知错误'}
-                        </span>
-                        <Button size="sm" variant="outline" onClick={() => ack({ taskSeq: t.seq })}>
-                          已读
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-          <div className="flex items-center gap-2 py-2 text-sm text-emerald-400">
-            <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-            全部正常，无需关注
-          </div>
-        )}
-      </CardContent>
-      </Card>
+      {failedTargets.length || failedTasks.length ? (
+        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+          <span className="font-medium">有 {failedTargets.length + failedTasks.length} 项封面异常需要处理</span>
+          <span className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={markAllRead}
+              className="cursor-pointer rounded-md px-2 py-1 text-red-400/90 transition-colors duration-150 ease-out hover:bg-red-500/15 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+            >
+              全部已读
+            </button>
+            <Link
+              href="/targets"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-red-400 transition-colors duration-150 ease-out hover:bg-red-500/15 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+            >
+              前往封面管理
+              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+            </Link>
+          </span>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>最近生成</CardTitle>
-          {recentLibs.length || recentCols.length ? (
+          <CardTitle>封面墙</CardTitle>
+          {allLibs.length || allCols.length ? (
             <Link
               href="/targets"
               className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
             >
-              全部封面
+              封面管理
               <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
             </Link>
           ) : null}
@@ -340,25 +268,23 @@ export default function DashboardPage() {
               <RecentSkeleton wide />
               <RecentSkeleton />
             </div>
-          ) : recentLibs.length || recentCols.length ? (
+          ) : allLibs.length || allCols.length ? (
             <div className="space-y-4">
-              {recentLibs.length ? (
+              {allLibs.length ? (
                 <RecentRow
                   title="媒体库"
-                  items={recentLibs}
+                  items={allLibs}
                   wide
-                  colors={colors}
                   onPreview={(t) => {
                     setPreviewTarget(t);
                     setPreviewIndex(previewList.findIndex((x) => x.id === t.id));
                   }}
                 />
               ) : null}
-              {recentCols.length ? (
+              {allCols.length ? (
                 <RecentRow
                   title="合集"
-                  items={recentCols}
-                  colors={colors}
+                  items={allCols}
                   onPreview={(t) => {
                     setPreviewTarget(t);
                     setPreviewIndex(previewList.findIndex((x) => x.id === t.id));
@@ -383,8 +309,7 @@ export default function DashboardPage() {
                 <img
                   src={`${previewTarget.coverUrl}?v=${encodeURIComponent(previewTarget.lastGeneratedAt || Date.now())}`}
                   alt={previewTarget.name}
-                  className="max-h-[50vh] max-w-full rounded-lg object-contain"
-                  style={glowShadow(colors[previewTarget.id])}
+                  className="max-h-[50vh] max-w-full rounded-lg border border-border/40 object-contain"
                 />
               ) : (
                 <div className="flex h-56 w-full items-center justify-center rounded border text-xs text-muted-foreground">
@@ -427,13 +352,11 @@ function RecentRow({
   title,
   items,
   wide,
-  colors,
   onPreview
 }: {
   title: string;
   items: Target[];
   wide?: boolean;
-  colors: Record<string, string | null>;
   onPreview: (t: Target) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -479,19 +402,17 @@ function RecentRow({
     <div>
       <div className="mb-2 text-xs font-semibold text-muted-foreground">{title}</div>
       <ScrollArea ref={ref} className="cursor-grab">
-        <div className="flex gap-3">
-          {items.map((t) => {
-            const color = t.coverUrl ? colors[t.id] : null;
-            return (
-              <div key={t.id} className={cn('group shrink-0 cursor-pointer', wide ? 'w-36' : 'w-24')} onClick={() => onPreview(t)}>
-                <div
-                  className={cn(
-                    'relative overflow-hidden rounded-lg border bg-muted/40 transition-[border-color,box-shadow,transform] duration-300 ease-out group-hover:border-primary/45 group-hover:shadow-pop',
-                    wide ? 'aspect-video' : 'aspect-[9/16]',
-                    !ready[t.id] && 'animate-pulse'
-                  )}
-                  style={color ? { borderColor: withAlpha(color, 0.33), boxShadow: `0 10px 30px -14px ${color}` } : undefined}
-                >
+        <div className="flex gap-4">
+          {items.map((t) => (
+            <div key={t.id} className={cn('group shrink-0 cursor-pointer', wide ? 'w-44' : 'w-28')} onClick={() => onPreview(t)}>
+              <div
+                className={cn(
+                  'relative overflow-hidden rounded-lg bg-muted/40 shadow-soft ring-1 ring-white/5 transition-[transform,box-shadow] duration-300 ease-out group-hover:-translate-y-0.5 group-hover:shadow-pop',
+                  wide ? 'aspect-video' : 'aspect-[9/16]',
+                  t.coverUrl && !ready[t.id] && 'animate-pulse'
+                )}
+              >
+                {t.coverUrl ? (
                   <img
                     src={t.coverUrl}
                     alt=""
@@ -499,92 +420,18 @@ function RecentRow({
                     decoding="async"
                     onLoad={() => setReady((p) => ({ ...p, [t.id]: true }))}
                     onError={() => setReady((p) => ({ ...p, [t.id]: true }))}
-                    className={cn('h-full w-full object-cover transition-[opacity,transform] duration-300 ease-out group-hover:scale-[1.04]', ready[t.id] ? 'opacity-100' : 'opacity-0')}
+                    className={cn('h-full w-full object-cover transition-[opacity,transform] duration-300 ease-out group-hover:scale-[1.02]', ready[t.id] ? 'opacity-100' : 'opacity-0')}
                   />
-                  {t.kind === 'collection' || !t.template || t.template === 'single' ? (
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 via-40% to-transparent opacity-0 transition-opacity duration-200 ease-out hoverable:group-hover:opacity-100 motion-reduce:transition-none">
-                      <div className="absolute inset-x-0 bottom-0 px-2 pb-2 pt-10 text-[11px] leading-snug text-white">
-                        {t.kind === 'library' ? (
-                          <MarqueeTitle title={t.posterSource || '未知来源影片'} />
-                        ) : (
-                          <span className="line-clamp-2" title={t.posterSource || '未知来源影片'}>
-                            {t.posterSource || '未知来源影片'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-                {t.lastTrigger ? (
-                  <div className="mt-1">
-                    <span className={cn('inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium', TRIGGER_COLOR[t.lastTrigger] || 'bg-slate-500/20 text-slate-300')}>
-                      {TRIGGER_LABEL[t.lastTrigger] || t.lastTrigger}
-                    </span>
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Images aria-hidden="true" className="h-5 w-5 text-muted-foreground/40" />
                   </div>
-                ) : null}
-                <div className="mt-0.5 truncate text-xs">{t.name}</div>
-                <div className="text-[11px] text-muted-foreground/80">{fmtTime(t.lastGeneratedAt)}</div>
+                )}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </ScrollArea>
-    </div>
-  );
-}
-
-function MarqueeTitle({ title }: { title: string }) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const textRef = useRef<HTMLSpanElement>(null);
-  const [dist, setDist] = useState(0);
-  const [reduced, setReduced] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setReduced(mq.matches);
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    const text = textRef.current;
-    if (!wrap || !text) return;
-    const measure = () => {
-      const overflow = text.scrollWidth - (wrap.clientWidth - 16); // px-2 两侧内边距
-      setDist(overflow > 0 ? overflow : 0);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(wrap);
-    return () => ro.disconnect();
-  }, [title]);
-
-  const animate = dist > 0 && !reduced;
-
-  return (
-    <div ref={wrapRef} className="overflow-hidden">
-      <span
-        ref={textRef}
-        title={title}
-        className={cn(
-          animate
-            ? 'title-marquee block w-max whitespace-nowrap'
-            : 'block truncate'
-        )}
-        style={
-          animate
-            ? ({
-                '--marquee-dist': `${dist}px`,
-                animationDuration: `${Math.max(1, dist / 50)}s`,
-                animationDelay: '0.6s'
-              } as React.CSSProperties)
-            : undefined
-        }
-      >
-        {title}
-      </span>
     </div>
   );
 }
@@ -627,9 +474,9 @@ function StatTile({
 function StatTileSkeleton() {
   return (
     <div className="rounded-lg border bg-card p-4 font-mono shadow-soft">
-      <div className="h-2.5 w-16 animate-pulse rounded bg-muted" />
-      <div className="mt-2 h-5 w-3/4 animate-pulse rounded bg-muted/70" />
-      <div className="mt-1.5 h-2.5 w-1/2 animate-pulse rounded bg-muted/60" />
+      <div className="h-3.5 w-24 animate-pulse rounded bg-muted" />
+      <div className="mt-2 h-7 w-3/4 animate-pulse rounded bg-muted/70" />
+      <div className="mt-0.5 h-3.5 w-1/2 animate-pulse rounded bg-muted/60" />
     </div>
   );
 }
@@ -648,34 +495,11 @@ function RecentSkeleton({ wide }: { wide?: boolean }) {
   return (
     <div>
       <div className="mb-2 h-3 w-16 animate-pulse rounded bg-muted" />
-      <div className="flex gap-3">
+      <div className="flex gap-4">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className={cn('shrink-0 animate-pulse rounded-lg bg-muted/50', wide ? 'aspect-video w-36' : 'aspect-[9/16] w-24')} />
+          <div key={i} className={cn('shrink-0 animate-pulse rounded-lg bg-muted/50', wide ? 'aspect-video w-44' : 'aspect-[9/16] w-28')} />
         ))}
       </div>
     </div>
   );
-}
-
-function visibleGlowColor(color: string | null | undefined): string | undefined {
-  if (!color) return undefined;
-  const m = color.match(/\d+/g);
-  if (m && m.length >= 3) {
-    const [r, g, b] = m.map(Number);
-    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    if (lum < 0.32) return 'hsl(var(--primary))';
-  }
-  return color;
-}
-
-function withAlpha(color: string, alpha: number): string {
-  const m = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-  if (m) return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
-  return `hsl(var(--primary) / ${alpha})`;
-}
-
-function glowShadow(color: string | null | undefined): { boxShadow: string } | undefined {
-  const g = visibleGlowColor(color);
-  if (!g) return undefined;
-  return { boxShadow: `0 0 0 1px ${withAlpha(g, 0.4)}, 0 0 18px 2px ${withAlpha(g, 0.55)}, 0 0 44px 10px ${withAlpha(g, 0.28)}` };
 }

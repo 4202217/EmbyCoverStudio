@@ -47,6 +47,13 @@ export async function rawFetch(path: string, opts: RequestInit = {}): Promise<Re
 }
 
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
+  // 发起批量封面任务的接口：广播事件让侧边栏立即刷新同步进度（无需等下一次轮询）
+  // 在请求发出前广播（乐观）：/api/sync 等接口要等任务结束才返回，不能等响应后再通知
+  const method = String(opts.method || 'GET').toUpperCase();
+  if (method === 'POST' && (path === '/api/sync' || path === '/api/targets/batch' || /^\/api\/targets\/[^/]+\/generate$/.test(path))) {
+    window.dispatchEvent(new Event('ecs:status-refresh'));
+  }
+
   const res = await rawFetch(path, opts);
 
   const ct = res.headers.get('content-type') || '';

@@ -242,26 +242,6 @@ export default function SettingsPage() {
     }
   };
 
-  const saveWebdavSettings = async () => {
-    const r = await api<{ settings: Settings }>('/api/settings', {
-      method: 'PUT',
-      body: JSON.stringify({
-        webdavUrl: draft.webdavUrl,
-        webdavUser: draft.webdavUser,
-        webdavPassword: draft.webdavPassword,
-        webdavFile: draft.webdavFile,
-        webdavAutoBackup: draft.webdavAutoBackup,
-        webdavIntervalHours: draft.webdavIntervalHours,
-        webdavSync: draft.webdavSync
-      })
-    });
-    setS(r.settings);
-    setDraft(r.settings);
-    return r.settings;
-  };
-
-  const webdav = draft;
-
   return (
     <div className="space-y-6">
       <div>
@@ -522,84 +502,6 @@ export default function SettingsPage() {
             <Button onClick={exportBackup}>导出备份</Button>
             <Button variant="outline" onClick={() => document.getElementById('import-file')?.click()}>导入备份</Button>
             <input id="import-file" type="file" accept=".json" className="hidden" onChange={(e) => e.target.files?.[0] && importBackup(e.target.files[0])} />
-          </div>
-
-          <div className="border-t pt-3">
-            <div className="mb-2 text-sm font-semibold">WebDAV 同步</div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="WebDAV 地址">
-                <Input aria-label="WebDAV 地址" placeholder="https://dav.example.com/dav/emby-cover-studio" value={webdav.webdavUrl || ''} onChange={(e) => setDraft({ ...draft, webdavUrl: e.target.value })} />
-              </Field>
-              <Field label="用户名">
-                <Input aria-label="用户名" placeholder="用户名" value={webdav.webdavUser || ''} onChange={(e) => setDraft({ ...draft, webdavUser: e.target.value })} />
-              </Field>
-              <Field label="密码">
-                <PasswordInput aria-label="密码" placeholder="密码" value={webdav.webdavPassword || ''} onChange={(e) => setDraft({ ...draft, webdavPassword: e.target.value })} />
-              </Field>
-              <Field label="备份文件名">
-                <Input aria-label="备份文件名" value={webdav.webdavFile || 'backup.json'} onChange={(e) => setDraft({ ...draft, webdavFile: e.target.value })} />
-              </Field>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-              <label className="flex cursor-pointer items-center gap-1.5">
-                <Switch checked={!!webdav.webdavAutoBackup} onCheckedChange={(v) => setDraft({ ...draft, webdavAutoBackup: v })} />
-                自动备份
-              </label>
-              <div className="flex items-center gap-1.5">
-                <Input type="number" aria-label="自动备份间隔小时数" className="h-8 w-20" value={webdav.webdavIntervalHours ?? 24} onChange={(e) => setDraft({ ...draft, webdavIntervalHours: Number(e.target.value) })} />
-                <span className="text-muted-foreground">小时</span>
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
-              <span className="text-muted-foreground">同步内容：</span>
-              <label className="flex items-center gap-1.5">
-                <Switch checked={webdav.webdavSync?.settings !== false} onCheckedChange={(v) => setDraft({ ...draft, webdavSync: { ...(webdav.webdavSync || {}), settings: v } })} />
-                设置（含密钥）
-              </label>
-              <label className="flex items-center gap-1.5">
-                <Switch checked={webdav.webdavSync?.targets !== false} onCheckedChange={(v) => setDraft({ ...draft, webdavSync: { ...(webdav.webdavSync || {}), targets: v } })} />
-                媒体库/合集配置
-              </label>
-              <label className="flex items-center gap-1.5">
-                <Switch checked={webdav.webdavSync?.tasks !== false} onCheckedChange={(v) => setDraft({ ...draft, webdavSync: { ...(webdav.webdavSync || {}), tasks: v } })} />
-                任务记录
-              </label>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={async () => { try { await saveWebdavSettings(); toast('ok', 'WebDAV 设置已保存'); } catch (e: any) { toast('err', `保存失败：${e.message}`); } }}>
-                保存设置
-              </Button>
-              <Button size="sm" variant="outline" onClick={async () => { try { await saveWebdavSettings(); await api('/api/webdav/test', { method: 'POST', body: '{}' }); toast('ok', 'WebDAV 连接正常'); } catch (e: any) { toast('err', `连接失败：${e.message}`); } }}>
-                测试连接
-              </Button>
-              <Button size="sm" onClick={async () => { try { await saveWebdavSettings(); const r = await api<{ url?: string }>('/api/webdav/backup', { method: 'POST', body: '{}' }); toast('ok', `已备份到 ${r.url}`); load(); } catch (e: any) { toast('err', `备份失败：${e.message}`); } }}>
-                立即备份
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  setConfirm({
-                    title: '从 WebDAV 恢复',
-                    description: '从 WebDAV 恢复将覆盖当前数据，确定继续吗？',
-                    confirmText: '恢复并覆盖',
-                    onConfirm: async () => {
-                      try {
-                        await saveWebdavSettings();
-                        await api('/api/webdav/restore', { method: 'POST', body: '{}' });
-                        toast('ok', '已从 WebDAV 恢复备份');
-                        load();
-                      } catch (e: any) {
-                        toast('err', `恢复失败：${e.message}`);
-                      }
-                    }
-                  })
-                }
-              >
-                从 WebDAV 恢复
-              </Button>
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">上次备份：{fmtTime(webdav.webdavLastBackup)}</div>
           </div>
         </CardContent>
       </Card>
