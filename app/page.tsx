@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Activity, AlertTriangle, CalendarClock, ChevronLeft, ChevronRight, Clock3, Images, Layers, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -304,15 +305,18 @@ export default function DashboardPage() {
       <Modal open={!!previewTarget} onClose={() => setPreviewTarget(null)} title="封面预览" className="max-w-3xl">
         {previewTarget ? (
           <div>
-            <div className="flex items-center justify-center rounded-lg py-6">
+            <div className="relative mx-auto h-[45vh] w-full max-w-2xl overflow-hidden rounded-lg border border-border/40">
               {previewTarget.coverUrl ? (
-                <img
-                  src={`${previewTarget.coverUrl}?v=${encodeURIComponent(previewTarget.lastGeneratedAt || Date.now())}`}
+                <Image
+                  src={`${previewTarget.coverUrl}?w=1024&v=${encodeURIComponent(previewTarget.lastGeneratedAt || Date.now())}`}
                   alt={previewTarget.name}
-                  className="max-h-[50vh] max-w-full rounded-lg border border-border/40 object-contain"
+                  fill
+                  sizes="90vw"
+                  unoptimized
+                  className="object-contain"
                 />
               ) : (
-                <div className="flex h-56 w-full items-center justify-center rounded border text-xs text-muted-foreground">
+                <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
                   尚未生成封面
                 </div>
               )}
@@ -413,14 +417,17 @@ function RecentRow({
                 )}
               >
                 {t.coverUrl ? (
-                  <img
-                    src={t.coverUrl}
+                  <Image
+                    src={`${t.coverUrl}?w=384`}
                     alt=""
+                    fill
+                    sizes={wide ? '176px' : '112px'}
+                    unoptimized
                     loading="lazy"
                     decoding="async"
                     onLoad={() => setReady((p) => ({ ...p, [t.id]: true }))}
                     onError={() => setReady((p) => ({ ...p, [t.id]: true }))}
-                    className={cn('h-full w-full object-cover transition-[opacity,transform] duration-300 ease-out group-hover:scale-[1.02]', ready[t.id] ? 'opacity-100' : 'opacity-0')}
+                    className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,7 +51,7 @@ export default function SettingsPage() {
     []
   );
 
-  const cur = draft?.coverByStyle?.[group] || {};
+  const cur = useMemo(() => draft?.coverByStyle?.[group] || {}, [draft, group]);
   const curPick = draft?.defaultPickByByStyle?.[group] || 'added';
 
   // 实时预览
@@ -477,6 +477,7 @@ export default function SettingsPage() {
               </Select>
               <div className="relative flex h-64 w-full items-center justify-center overflow-hidden rounded-lg border bg-muted/30 p-2">
                 {previewSrc ? (
+                  /* eslint-disable-next-line @next/next/no-img-element -- 实时预览图每次调整都重新生成，走 next/image 优化器只会增加请求与缓存开销 */
                   <img
                     key={previewSrc}
                     src={previewSrc}

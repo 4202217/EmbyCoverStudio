@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import Image from 'next/image';
 import {
   AlertTriangle,
   ChevronDown,
@@ -137,7 +138,7 @@ export default function TargetsPage() {
     if (!active) return;
     const timer = setInterval(loadSync, 1000);
     return () => clearInterval(timer);
-  }, [forcePoll, sync?.running, sync?.status]);
+  }, [forcePoll, sync]);
 
   // 同步结束：刷新列表并让进度卡片停留 6 秒后自动收起
   useEffect(() => {
@@ -158,7 +159,7 @@ export default function TargetsPage() {
     load();
     if (doneTimer.current) clearTimeout(doneTimer.current);
     doneTimer.current = setTimeout(() => setShowDone(false), 6000);
-  }, [sync?.running, sync?.status]);
+  }, [sync]);
 
   const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || 'single');
   const cfgStyle = (s: string) => (s === 'hero' ? 'single' : isWall(s) ? 'wall' : s);
@@ -520,7 +521,7 @@ export default function TargetsPage() {
             >
               <div className="flex items-center gap-3">
                 <div
-                  className={cn('group shrink-0 cursor-pointer overflow-hidden rounded-md border bg-muted/40', t.kind === 'library' ? 'h-14 w-24' : 'h-16 w-12')}
+                  className={cn('group relative shrink-0 cursor-pointer overflow-hidden rounded-md border bg-muted/40', t.kind === 'library' ? 'h-14 w-24' : 'h-16 w-12')}
                   title="点击预览"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -528,13 +529,16 @@ export default function TargetsPage() {
                   }}
                 >
                   {t.coverUrl ? (
-                  <img
-                    src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110"
-                  />
+                    <Image
+                      src={`${t.coverUrl}?w=192&v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
+                      alt=""
+                      fill
+                      sizes="96px"
+                      unoptimized
+                      loading="lazy"
+                      decoding="async"
+                      className="object-cover transition-transform duration-300 ease-out group-hover:scale-110"
+                    />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <ImageIcon className="h-5 w-5 text-muted-foreground/50" />
@@ -591,11 +595,16 @@ export default function TargetsPage() {
                       <div className="shrink-0">
                         <div className="mb-1 text-[11px] text-muted-foreground">当前封面</div>
                         {t.coverUrl ? (
-                          <img
-                            src={`${t.coverUrl}?v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
-                            alt="当前封面"
-                            className={cn('rounded border object-cover', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}
-                          />
+                          <div className={cn('relative overflow-hidden rounded border', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}>
+                            <Image
+                              src={`${t.coverUrl}?w=416&v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
+                              alt="当前封面"
+                              fill
+                              sizes="208px"
+                              unoptimized
+                              className="object-cover"
+                            />
+                          </div>
                         ) : (
                           <div className={cn('flex items-center justify-center rounded border bg-muted/40 text-xs text-muted-foreground', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}>
                             尚未生成
@@ -605,7 +614,9 @@ export default function TargetsPage() {
                       <div className="shrink-0">
                         <div className="mb-1 text-[11px] text-muted-foreground">预览（新配置）</div>
                         {drafts[t.id] ? (
-                          <img src={drafts[t.id]} alt="新配置预览" className={cn('rounded border object-cover', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')} />
+                          <div className={cn('relative overflow-hidden rounded border', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}>
+                            <Image src={`${drafts[t.id]}?w=416`} alt="新配置预览" fill sizes="208px" unoptimized className="object-cover" />
+                          </div>
                         ) : (
                           <div className={cn('flex items-center justify-center rounded border bg-muted/40 text-xs text-muted-foreground', t.kind === 'library' ? 'aspect-video w-52' : 'aspect-[2/3] w-32')}>
                             {draftLoading ? '生成中…' : '调整配置后自动生成'}
@@ -692,15 +703,18 @@ export default function TargetsPage() {
       <Modal open={!!preview} onClose={() => setPreview(null)} title="封面预览" className="max-w-3xl">
         {preview ? (
           <div>
-            <div className="flex items-center justify-center overflow-hidden rounded-lg py-6">
+            <div className="relative mx-auto h-[45vh] w-full max-w-2xl overflow-hidden rounded-lg border border-border/40">
               {preview.coverUrl ? (
-                <img
-                  src={`${preview.coverUrl}?v=${encodeURIComponent(preview.lastGeneratedAt || Date.now())}`}
+                <Image
+                  src={`${preview.coverUrl}?w=1024&v=${encodeURIComponent(preview.lastGeneratedAt || Date.now())}`}
                   alt={preview.name}
-                  className="max-h-[50vh] max-w-full rounded-lg object-contain"
+                  fill
+                  sizes="90vw"
+                  unoptimized
+                  className="object-contain"
                 />
               ) : (
-                <div className="flex h-56 w-full items-center justify-center rounded border text-xs text-muted-foreground">
+                <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
                   尚未生成封面
                 </div>
               )}
@@ -735,6 +749,7 @@ export default function TargetsPage() {
                     setItems([]);
                   }}
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- 后端已按 ?w=120 缩尺寸的动态代理图，无需 next/image 优化 */}
                   <img src={`/api/item-image/${i.id}?w=120`} alt="" className="h-20 w-14 rounded object-cover" loading="lazy" />
                   <span className="line-clamp-2">{i.name}</span>
                 </button>

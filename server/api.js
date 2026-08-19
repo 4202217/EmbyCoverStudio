@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { COVERS_DIR } from '../src/config.js';
 import { info, warn, error } from '../src/logger.js';
 import { EmbyClient } from '../src/emby/client.js';
@@ -24,6 +25,20 @@ function errJson(errorMsg, status = 400) {
 
 function okBuffer(buf, contentType) {
   return { status: 200, contentType, body: buf };
+}
+
+// 封面缩略图内存缓存（按 文件+宽度 缓存，上限 200 条，超出丢最旧）
+const coverResizeCache = new Map();
+async function resizeCover(fp, w) {
+  const key = `${fp}:${w}`;
+  if (coverResizeCache.has(key)) return coverResizeCache.get(key);
+  const buf = await sharp(fp).resize({ width: w, withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+  coverResizeCache.set(key, buf);
+  if (coverResizeCache.size > 200) {
+    const oldest = coverResizeCache.keys().next().value;
+    coverResizeCache.delete(oldest);
+  }
+  return buf;
 }
 
 export function createApi(app) {
@@ -412,6 +427,15 @@ export function createApi(app) {
       if (!/^[A-Za-z0-9._-]+\.(png|webp)$/.test(file)) return errJson('非法文件名');
       const fp = path.join(COVERS_DIR, file);
       if (!fs.existsSync(fp)) return errJson('封面不存在', 404);
+      const rawW = Number(query.get('w')) || 0;
+      const w = rawW > 0 ? Math.min(1200, Math.max(80, rawW)) : 0;
+      if (w > 0) {
+        try {
+          return okBuffer(await resizeCover(fp, w), 'image/webp');
+        } catch {
+          // 缩放失败时回退原图
+        }
+      }
       return okBuffer(fs.readFileSync(fp), file.endsWith('.webp') ? 'image/webp' : 'image/png');
     }
 
