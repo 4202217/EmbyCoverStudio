@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Modal } from '@/components/ui/modal';
 import { api } from '@/lib/api';
-import { cn, fmtTime } from '@/lib/utils';
+import { cn, fmtTime, TRIGGER_LABEL } from '@/lib/utils';
 
 type Status = {
   running?: boolean;
@@ -228,25 +228,53 @@ export default function DashboardPage() {
       ) : null}
 
       {failedTargets.length || failedTasks.length ? (
-        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-          <span className="font-medium">有 {failedTargets.length + failedTasks.length} 项封面异常需要处理</span>
-          <span className="ml-auto flex items-center gap-1.5">
+        <div className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs text-red-400">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+            <span className="font-medium">有 {failedTargets.length + failedTasks.length} 项异常需要处理</span>
             <button
               type="button"
               onClick={markAllRead}
-              className="cursor-pointer rounded-md px-2 py-1 text-red-400/90 transition-colors duration-150 ease-out hover:bg-red-500/15 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+              className="ml-auto cursor-pointer rounded-md px-2 py-1 text-red-400/90 transition-colors duration-150 ease-out hover:bg-red-500/15 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
             >
               全部已读
             </button>
+          </div>
+          {failedTargets.map((t) => (
             <Link
-              href="/targets"
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-red-400 transition-colors duration-150 ease-out hover:bg-red-500/15 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+              key={`t-${t.id}`}
+              href="/targets?error=1"
+              className="flex items-start gap-2 rounded-md px-1 py-1 transition-colors duration-150 ease-out hover:bg-red-500/10"
             >
-              前往封面管理
-              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+              <span className="mt-0.5 inline-flex shrink-0 rounded bg-red-500/20 px-1.5 py-px font-medium text-red-300">封面</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-red-300">{t.name}</span>
+                <span className="block truncate text-red-400/85" title={t.lastError}>
+                  {t.lastError}
+                </span>
+              </span>
+              <ChevronRight aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             </Link>
-          </span>
+          ))}
+          {failedTasks.map((t) => (
+            <Link
+              key={`k-${t.seq}`}
+              href="/logs"
+              className="flex items-start gap-2 rounded-md px-1 py-1 transition-colors duration-150 ease-out hover:bg-red-500/10"
+            >
+              <span className="mt-0.5 inline-flex shrink-0 rounded bg-red-500/20 px-1.5 py-px font-medium text-red-300">任务</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-red-300">
+                  {t.name}
+                  <span className="ml-1.5 text-red-400/75">{TRIGGER_LABEL[t.trigger] || t.trigger || ''}</span>
+                </span>
+                <span className="block truncate text-red-400/85" title={t.error}>
+                  {t.error}
+                </span>
+              </span>
+              <ChevronRight aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            </Link>
+          ))}
         </div>
       ) : null}
 

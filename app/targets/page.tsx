@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Image from 'next/image';
 import {
   AlertTriangle,
+  Check,
   ChevronDown,
   FileText,
   Folder,
@@ -65,8 +66,6 @@ type SyncState = {
   unchanged?: number;
 };
 
-const PICK_LABEL: Record<string, string> = { added: '最新入库', premiere: '最新发行', random: '随机', manual: '手动选择' };
-
 // 海报墙类样式（多图拼接）不支持手动/随机选图，其余单图样式支持
 const isWall = (s: string) => s === 'wall-v';
 // 墙类样式可用的选图依据（不支持手动/随机）
@@ -84,6 +83,7 @@ export default function TargetsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<{ style: string; pickBy: string; manualItemId: string; manualItemName: string } | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [pickerSel, setPickerSel] = useState('');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [draftLoading, setDraftLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -94,6 +94,7 @@ export default function TargetsPage() {
   const [loaded, setLoaded] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const seenActive = useRef(false);
+  const errorParamHandled = useRef(false);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = async () => {
@@ -101,6 +102,13 @@ export default function TargetsPage() {
       const [t, s] = await Promise.all([api<{ targets: Target[] }>('/api/targets'), api<Styles>('/api/styles')]);
       setTargets(t.targets);
       setStyles(s);
+      // 从首页异常横幅跳转时（/targets?error=1），首次加载自动切到「有错误」筛选
+      if (!errorParamHandled.current && typeof window !== 'undefined') {
+        errorParamHandled.current = true;
+        if (new URLSearchParams(window.location.search).get('error') === '1') {
+          setCoverF('error');
+        }
+      }
       setSelected((sel) => {
         const ids = new Set(t.targets.map((x) => x.id));
         return new Set([...sel].filter((id) => ids.has(id)));
@@ -164,7 +172,6 @@ export default function TargetsPage() {
   const effStyle = (t: Target) => (t.kind === 'collection' ? 'single' : t.template || 'single');
   const cfgStyle = (s: string) => (s === 'hero' ? 'single' : isWall(s) ? 'wall' : s);
   const effPick = (t: Target) => t.pickBy || styles.defaultPickByByStyle?.[`${t.kind}-${cfgStyle(effStyle(t))}`] || 'added';
-  const pickLabel = (p: string) => PICK_LABEL[p] || '最新入库';
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -176,6 +183,9 @@ export default function TargetsPage() {
       .filter((t) => coverF === 'all' || (coverF === 'generated' ? !!t.coverUrl : !!t.lastError))
       .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'library' ? -1 : 1) || a.name.localeCompare(b.name, 'zh-CN'));
   }, [targets, query, typeF, statusF, cfgF, coverF]);
+
+  const libs = useMemo(() => visible.filter((t) => t.kind === 'library'), [visible]);
+  const cols = useMemo(() => visible.filter((t) => t.kind === 'collection'), [visible]);
 
   const selectedSingle = selected.size === 1 ? targets.find((t) => selected.has(t.id)) ?? null : null;
 
@@ -219,8 +229,8 @@ export default function TargetsPage() {
   };
 
   const syncAll = async () => {
-    toast('info', '开始同步所有未锁定封面…');
-    api('/api/sync', { method: 'POST', body: JSON.stringify({ force: true }) })
+    toast('info', '开始同步封面，仅更新有变化的条目…');
+    api('/api/sync', { method: 'POST', body: JSON.stringify({}) })
       .catch((e: any) => toast('err', e.message));
     startSyncPolling();
   };
@@ -241,6 +251,7 @@ export default function TargetsPage() {
   const openPicker = async (t: Target) => {
     const r = await api<{ items: Item[] }>(`/api/targets/${t.id}/items`);
     setItems(r.items.filter((i) => i.hasPrimary));
+    setPickerSel(t.manualItemId || '');
   };
 
   const changed = (t: Target) => {
@@ -352,13 +363,18 @@ export default function TargetsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight">
+        <h1 className="flex flex-wrap items-center gap-2.5 text-2xl font-bold tracking-tight">
           封面管理
-          {loaded && targets.length ? (
-            <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-xs font-normal text-primary">
-              {targets.length}
-            </span>
-          ) : null}
+          <span className="inline-flex min-w-[2.75rem] items-center justify-center rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-xs font-normal text-primary">
+            {loaded ? targets.length : '…'}
+          </span>
+          <button
+            type="button"
+            onClick={syncAll}
+            className="cursor-pointer rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary transition-colors duration-150 ease-out hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+          >
+            立即同步
+          </button>
         </h1>
         <p className="text-sm text-muted-foreground">管理 Emby 媒体库与合集的封面生成，单选可单独配置，支持多选批量操作</p>
       </div>
@@ -437,8 +453,8 @@ export default function TargetsPage() {
         </Card>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-2.5">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="sticky top-24 z-20 flex flex-col gap-2 rounded-xl border border-primary/25 bg-card/95 p-2.5 shadow-pop backdrop-blur-md lg:top-2 lg:flex-row lg:items-center">
+        <div className="flex items-center gap-2 text-xs">
           <label className="flex cursor-pointer items-center gap-1.5">
             <input
               type="checkbox"
@@ -452,6 +468,11 @@ export default function TargetsPage() {
             全选
           </label>
           <span className="text-muted-foreground">已选 {selected.size} 项</span>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} disabled={!selected.size}>
+            清除
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <Button size="sm" variant="outline" onClick={() => batch('enable')} disabled={!selected.size}>
             取消锁定
           </Button>
@@ -465,16 +486,13 @@ export default function TargetsPage() {
             更新封面
           </Button>
         </div>
-        <Button size="sm" onClick={syncAll}>
-          同步媒体库封面
-        </Button>
       </div>
 
-      <div className="space-y-2">
+      <div className="grid gap-2 min-[1200px]:grid-cols-2">
         {!loaded ? (
-          <div className="rounded-md border bg-card p-6 text-center text-sm text-muted-foreground">加载中…</div>
+          <div className="col-span-full rounded-md border bg-card p-6 text-center text-sm text-muted-foreground">加载中…</div>
         ) : !visible.length ? (
-          <div className="rounded-md border bg-card p-8 text-center">
+          <div className="col-span-full rounded-md border bg-card p-8 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
               <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
             </div>
@@ -485,7 +503,10 @@ export default function TargetsPage() {
             </Button>
           </div>
         ) : null}
-        {visible.map((t) => {
+        {visible.map((t, i) => {
+          const prevKind = i > 0 ? visible[i - 1].kind : null;
+          const isLibHead = t.kind === 'library' && prevKind !== 'library';
+          const isColHead = t.kind === 'collection' && prevKind !== 'collection';
           const isSelected = selected.has(t.id);
           const pick = effPick(t);
           const style = effStyle(t);
@@ -493,35 +514,42 @@ export default function TargetsPage() {
           const isBoxsetsLib = t.kind === 'library' && (t.collectionType === 'boxsets' || t.collectionType === 'collections');
           const countText = isBoxsetsLib ? `共 ${t.itemCount || 0} 合集` : `${t.itemCount ?? 0} 部影片`;
           return (
-            <Card
-              key={t.id}
-              className={cn(
-                'cursor-pointer p-3 transition-[border-color,background-color,box-shadow] duration-150 ease-out hover:border-primary/50 hover:shadow-pop',
-                isSelected && 'border-primary bg-primary/[0.04] shadow-pop ring-1 ring-primary/60',
-                t.missing && 'opacity-70'
-              )}
-              onClick={(e) => {
-                if (e.ctrlKey || e.metaKey) {
-                  setSelected((prev) => {
-                    const n = new Set(prev);
-                    if (n.has(t.id)) n.delete(t.id);
-                    else n.add(t.id);
-                    return n;
-                  });
-                } else {
-                  setSelected(new Set([t.id]));
+            <Fragment key={t.id}>
+              {isLibHead ? (
+                <div className="col-span-full flex items-center gap-2 px-1 pt-2">
+                  <Layers aria-hidden="true" className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold">媒体库</h2>
+                  <span className="font-mono text-xs text-muted-foreground">{libs.length}</span>
+                </div>
+              ) : null}
+              {isColHead ? (
+                <div className="col-span-full flex items-center gap-2 px-1 pt-2">
+                  <Folder aria-hidden="true" className="h-4 w-4 text-gold" />
+                  <h2 className="text-sm font-semibold">合集</h2>
+                  <span className="font-mono text-xs text-muted-foreground">{cols.length}</span>
+                </div>
+              ) : null}
+              <Card
+                className={cn(
+                  'cursor-pointer p-3 transition-[border-color,background-color,box-shadow] duration-150 ease-out hover:border-primary/50 hover:shadow-pop',
+                  isSelected && 'border-primary/60 bg-primary/[0.04] shadow-pop ring-1 ring-primary/40',
+                  t.missing && 'opacity-70',
+                  (t.kind === 'library' || (t.kind === 'collection' && isSelected)) && 'min-[1200px]:col-span-full'
+                )}
+                onClick={() => {
+                  // 单击选中该卡片；再次单击已选中的卡片则取消选择（单选，不累积多选）
+                  setSelected((prev) => (prev.has(t.id) ? new Set() : new Set([t.id])));
                   setPending(null);
                   setDrafts((d) => {
                     const n = { ...d };
                     delete n[t.id];
                     return n;
                   });
-                }
-              }}
-            >
+                }}
+              >
               <div className="flex items-center gap-3">
                 <div
-                  className={cn('group relative shrink-0 cursor-pointer overflow-hidden rounded-md border bg-muted/40', t.kind === 'library' ? 'h-14 w-24' : 'h-16 w-12')}
+                  className={cn('group relative shrink-0 cursor-pointer overflow-hidden rounded-md border bg-muted/40', t.kind === 'library' ? 'h-16 w-28' : 'h-24 w-16')}
                   title="点击预览"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -533,7 +561,7 @@ export default function TargetsPage() {
                       src={`${t.coverUrl}?w=192&v=${encodeURIComponent(t.lastGeneratedAt || '')}`}
                       alt=""
                       fill
-                      sizes="96px"
+                      sizes="112px"
                       unoptimized
                       loading="lazy"
                       decoding="async"
@@ -545,19 +573,36 @@ export default function TargetsPage() {
                     </div>
                   )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-semibold">{t.name}</span>
-                    <Badge variant={t.kind === 'library' ? 'default' : 'secondary'}>{t.kind === 'library' ? '媒体库' : '合集'}</Badge>
-                    {t.configured ? <Badge variant="warning">手动配置</Badge> : <Badge variant="muted">默认配置</Badge>}
+                <div className="flex min-w-0 flex-1 flex-col justify-between gap-1.5 self-stretch">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className={cn('truncate font-semibold', t.kind === 'collection' ? 'text-base' : 'text-sm')}>{t.name}</span>
+                    <Badge className={cn('border-transparent', t.kind === 'library' ? 'bg-primary/10 text-primary' : 'bg-gold/10 text-gold')}>
+                      {t.kind === 'library' ? '媒体库' : '合集'}
+                    </Badge>
                     {t.locked ? <Badge variant="destructive">已锁定</Badge> : null}
                     {t.missing ? <Badge variant="muted">已删除</Badge> : null}
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {fmtTime(t.lastGeneratedAt)} 生成 · {pickLabel(pick)} · {countText}
-                    {style === 'single' && t.posterSource ? <span className="block truncate">海报来源：{t.posterSource}</span> : null}
+                  <div className="flex flex-col gap-1">
+                    <div className={cn('flex items-baseline gap-0.5', t.kind === 'collection' ? 'text-[15px]' : 'text-sm')}>
+                      {countText.split(/(\d+)/).filter(Boolean).map((part, idx) =>
+                        /\d+/.test(part) ? (
+                          <span key={idx} className="font-semibold text-primary">{part}</span>
+                        ) : (
+                          <span key={idx} className="text-muted-foreground">{part}</span>
+                        )
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span>{t.lastGeneratedAt ? <>{fmtTime(t.lastGeneratedAt)} 生成</> : '尚未生成'}</span>
+                      {t.configured ? <Badge className="border border-violet-500/40 bg-violet-500/5 text-violet-400">手动配置</Badge> : null}
+                    </div>
+                    {t.lastError ? (
+                      <div className="mt-0.5 flex items-center gap-1.5 rounded border-l-2 border-red-500 bg-red-500/10 px-2 py-1 text-xs text-red-400">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        <span className="min-w-0 truncate" title={t.lastError}>{t.lastError}</span>
+                      </div>
+                    ) : null}
                   </div>
-                  {t.lastError ? <div className="mt-1 flex items-center gap-1 text-xs text-red-400"><AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {t.lastError}</div> : null}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <Button size="sm" className="w-[74px]" disabled={t.locked || busy === t.id} onClick={(e) => { e.stopPropagation(); generate(t.id); }}>
@@ -583,7 +628,7 @@ export default function TargetsPage() {
                 <div className="mt-3 space-y-2 border-t pt-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">当前：</span>
-                    {t.configured ? <Badge variant="warning">手动配置</Badge> : <Badge variant="muted">默认配置</Badge>}
+                    {t.configured ? <Badge className="border border-violet-500/40 bg-violet-500/5 text-violet-400">手动配置</Badge> : <Badge variant="muted">默认配置</Badge>}
                     {!t.configured ? (
                       <span className="text-muted-foreground">
                         {t.kind === 'library' ? '（默认单图海报，选图依据跟随全局）' : '（选图依据跟随合集全局配置）'}
@@ -695,7 +740,8 @@ export default function TargetsPage() {
                   )}
                 </div>
               ) : null}
-            </Card>
+              </Card>
+            </Fragment>
           );
         })}
       </div>
@@ -735,25 +781,56 @@ export default function TargetsPage() {
         ) : null}
       </Modal>
 
-      <Modal open={items.length > 0} onClose={() => setItems([])} title="选择封面影片">
+      <Modal
+        open={items.length > 0}
+        onClose={() => setItems([])}
+        title="选择封面影片"
+        description="点击任意影片打勾，将其海报作为该合集封面；点「确定」后本地预览，保存后才上传 Emby。"
+        className="max-w-2xl"
+      >
         {items.length ? (
-          <div>
-            <p className="mb-3 text-xs text-muted-foreground">点击任意影片，将其海报作为该合集封面。选择后先本地预览，点「保存」后才上传 Emby。</p>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          <div className="flex flex-col">
+            <div className="grid max-h-[50vh] grid-cols-4 gap-2 overflow-y-auto pr-1 sm:grid-cols-5">
               {items.map((i) => (
                 <button
                   key={i.id}
-                  className="flex cursor-pointer flex-col items-center gap-1 rounded-md border p-1.5 text-xs transition-[border-color,transform] duration-150 ease-out hover:border-primary active:scale-[0.98]"
-                  onClick={() => {
-                    setPending((p) => ({ ...(p || { style: 'single', pickBy: 'manual', manualItemId: '', manualItemName: '' }), pickBy: 'manual', manualItemId: i.id, manualItemName: i.name }));
-                    setItems([]);
-                  }}
+                  className={cn(
+                    'group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-card text-left text-xs transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out hover:border-primary/60 hover:shadow-pop active:scale-[0.98]',
+                    pickerSel === i.id && 'border-primary/60 bg-primary/[0.04] ring-1 ring-primary/40'
+                  )}
+                  onClick={() => setPickerSel(i.id)}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element -- 后端已按 ?w=120 缩尺寸的动态代理图，无需 next/image 优化 */}
-                  <img src={`/api/item-image/${i.id}?w=120`} alt="" className="h-20 w-14 rounded object-cover" loading="lazy" />
-                  <span className="line-clamp-2">{i.name}</span>
+                  <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted/40">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- 后端已按 ?w=240 缩尺寸的动态代理图，无需 next/image 优化 */}
+                    <img src={`/api/item-image/${i.id}?w=240`} alt={i.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105" />
+                    {pickerSel === i.id ? (
+                      <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-soft">
+                        <Check aria-hidden="true" className="h-3 w-3" />
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className={cn('line-clamp-2 w-full px-1.5 py-1.5 leading-tight', pickerSel === i.id ? 'font-medium text-primary' : 'text-foreground/85')}>
+                    {i.name}
+                  </span>
                 </button>
               ))}
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2 border-t pt-3">
+              <Button size="sm" variant="outline" onClick={() => setItems([])}>
+                取消
+              </Button>
+              <Button
+                size="sm"
+                disabled={!pickerSel}
+                onClick={() => {
+                  const picked = items.find((i) => i.id === pickerSel);
+                  if (!picked) return;
+                  setPending((p) => ({ ...(p || { style: 'single', pickBy: 'manual', manualItemId: '', manualItemName: '' }), pickBy: 'manual', manualItemId: picked.id, manualItemName: picked.name }));
+                  setItems([]);
+                }}
+              >
+                确定
+              </Button>
             </div>
           </div>
         ) : null}
