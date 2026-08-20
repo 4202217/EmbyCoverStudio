@@ -69,17 +69,17 @@ function BrandMark({ size = 'md' }: { size?: 'sm' | 'md' }) {
       <svg viewBox="0 0 64 64" className={svgSize} aria-hidden="true">
         <defs>
           <linearGradient id="brand-bg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#1a2333" />
-            <stop offset="1" stop-color="#0b101a" />
+            <stop offset="0" stopColor="#1a2333" />
+            <stop offset="1" stopColor="#0b101a" />
           </linearGradient>
           <linearGradient id="brand-e" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#1a7d28" />
-            <stop offset="0.45" stop-color="#52B54B" />
-            <stop offset="1" stop-color="#eaf7e7" />
+            <stop offset="0" stopColor="#1a7d28" />
+            <stop offset="0.45" stopColor="#52B54B" />
+            <stop offset="1" stopColor="#eaf7e7" />
           </linearGradient>
         </defs>
         <rect width="64" height="64" rx="14" fill="url(#brand-bg)" />
-        <rect x="1" y="1" width="62" height="62" rx="13" fill="none" stroke="#ffffff" stroke-opacity="0.08" />
+        <rect x="1" y="1" width="62" height="62" rx="13" fill="none" stroke="#ffffff" strokeOpacity="0.08" />
         <g transform="translate(32 32) scale(1.35) translate(-12 -12)">
           <path
             fill="url(#brand-e)"
@@ -238,43 +238,58 @@ export function MobileNav({ version }: { version: string }) {
   const status = useSystemStatus();
   const failedCount = status?.stats?.failed || 0;
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-xl lg:hidden">
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <BrandMark size="sm" />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-bold leading-tight">Emby 封面工坊</div>
-            <div className="truncate font-mono text-[10px] text-muted-foreground">v{version}</div>
+    <>
+      <div
+        aria-hidden
+        className="lg:hidden"
+        style={{ height: 'calc(env(safe-area-inset-top) + 6rem)' }}
+      />
+      <header
+        className="fixed inset-x-0 top-0 z-40 border-b lg:hidden"
+        style={{
+          height: 'calc(env(safe-area-inset-top) + 6rem)',
+          backgroundColor: 'hsl(222 30% 9%)'
+        }}
+      >
+        <div className="pt-safe-top flex h-full flex-col">
+          <div className="flex flex-1 items-center justify-between gap-3 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <BrandMark size="sm" />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold leading-tight">Emby 封面工坊</div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">v{version}</div>
+              </div>
+            </div>
           </div>
+          <nav aria-label="主导航" className="scrollbar-none flex gap-1 overflow-x-auto px-3 pb-2">
+            {NAV.map((item) => {
+              const active = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70',
+                    active ? 'bg-primary/10 text-primary' : 'hover:bg-accent hover:text-accent-foreground'
+                  )}
+                >
+                  <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+                  {item.label}
+                  {item.href === '/targets' && failedCount > 0 ? (
+                    <span className="ml-auto flex items-center gap-1 rounded-full bg-red-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-red-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                      {failedCount}
+                    </span>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
-      </div>
-      <nav aria-label="主导航" className="scrollbar-none flex gap-1 overflow-x-auto px-3 pb-2">
-        {NAV.map((item) => {
-          const active = pathname === item.href;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70',
-                active ? 'bg-primary/10 text-primary' : 'hover:bg-accent hover:text-accent-foreground'
-              )}
-            >
-              <Icon aria-hidden="true" className="h-3.5 w-3.5" />
-              {item.label}
-              {item.href === '/targets' && failedCount > 0 ? (
-                <span className="ml-auto flex items-center gap-1 rounded-full bg-red-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-red-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                  {failedCount}
-                </span>
-              ) : null}
-            </Link>
-          );
-        })}
-      </nav>
-    </header>
+      </header>
+    </>
   );
 }
 

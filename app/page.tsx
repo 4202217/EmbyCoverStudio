@@ -147,10 +147,20 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-card via-card/85 to-card/45 shadow-soft">
-        <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-primary/12 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-28 right-1/3 h-56 w-56 rounded-full bg-gold/10 blur-3xl" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
+      <div
+        className="relative overflow-hidden rounded-xl border shadow-soft"
+        style={{
+          backgroundImage:
+            'radial-gradient(520px 380px at 108% -18%, rgba(0,168,219,0.15), transparent 60%), radial-gradient(440px 360px at 38% 118%, rgba(251,186,35,0.12), transparent 58%)'
+        }}
+      >
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-px"
+          style={{
+            backgroundImage:
+              'linear-gradient(to right, rgba(0,0,0,0), rgba(251,186,35,0.3), rgba(0,0,0,0))'
+          }}
+        />
         <div className="relative p-6 md:p-8">
           <div className="max-w-2xl">
             <div className="mb-2.5 flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-gold">

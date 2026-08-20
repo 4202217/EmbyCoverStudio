@@ -453,7 +453,7 @@ export default function TargetsPage() {
         </Card>
       ) : null}
 
-      <div className="sticky top-24 z-20 flex flex-col gap-2 rounded-xl border border-primary/25 bg-card/95 p-2.5 shadow-pop backdrop-blur-md lg:top-2 lg:flex-row lg:items-center">
+      <div className="sticky top-[calc(6rem+env(safe-area-inset-top))] z-20 flex flex-col gap-2 rounded-xl border border-primary/25 bg-card/95 p-2.5 shadow-pop backdrop-blur-md lg:top-2 lg:flex-row lg:items-center">
         <div className="flex items-center gap-2 text-xs">
           <label className="flex cursor-pointer items-center gap-1.5">
             <input
